@@ -8,6 +8,7 @@
 - [需求文档](../reqs/hi-terms-requirements.md)
 - [Roadmap 文档](../reqs/hi-terms-roadmap.md)
 - [产品定位与需求决策](../decisions/hi-terms-product-and-requirements-decisions.md)
+- [技术选型决策](../decisions/hi-terms-technical-decisions.md)
 
 > 本文档是 Hi-Terms 项目所有核心术语的权威定义来源。其他文档使用术语时保留简要说明并链接至此，不重复完整定义。
 

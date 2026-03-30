@@ -7,6 +7,7 @@
 - [愿景文档](hi-terms-vision.md)（两大阶段权威定义）
 - [Roadmap 文档](hi-terms-roadmap.md)
 - [产品定位与需求决策](../decisions/hi-terms-product-and-requirements-decisions.md)
+- [技术选型决策](../decisions/hi-terms-technical-decisions.md)
 - [术语表](../SSOT/glossary.md)（术语权威定义）
 
 > [两大阶段](../SSOT/glossary.md#两大阶段two-phase-model)的定义与递进关系，参见[愿景文档 §1](hi-terms-vision.md#1-产品愿景)。

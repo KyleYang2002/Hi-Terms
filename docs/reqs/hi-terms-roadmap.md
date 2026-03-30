@@ -7,10 +7,11 @@
 - [愿景文档](hi-terms-vision.md)（两大阶段权威定义）
 - [需求文档](hi-terms-requirements.md)
 - [产品定位与需求决策](../decisions/hi-terms-product-and-requirements-decisions.md)
+- [技术选型决策](../decisions/hi-terms-technical-decisions.md)
 - [术语表](../SSOT/glossary.md)（术语权威定义）
 
 > [两大阶段](../SSOT/glossary.md#两大阶段two-phase-model)的定义与递进关系，参见[愿景文档 §1](hi-terms-vision.md#1-产品愿景)。
-> 第一大阶段按 v0.1–v0.6 划分版本，每个版本包含明确的交付物和验收标准。第二大阶段保持里程碑粒度。
+> 第一大阶段按 v0.1–v0.7 划分版本，每个版本包含明确的交付物、验收标准和架构约束。第二大阶段保持里程碑粒度。
 
 ## 1. Roadmap 概览
 
@@ -22,11 +23,12 @@ graph LR
         direction TB
         V1["v0.1 终端内核启动"]
         V2["v0.2 日常可用终端"]
-        V3["v0.3 AI CLI 稳定承载"]
-        V4["v0.4 高效操作体验"]
-        V5["v0.5 个性化与打磨"]
-        V6["v0.6 Session Host 基础与阶段收官"]
-        V1 --> V2 --> V3 --> V4 --> V5 --> V6
+        V3["v0.3 高效操作体验"]
+        V4["v0.4 AI CLI 稳定承载"]
+        V5["v0.5 个性化与配置基础"]
+        V6["v0.6 体验打磨与集成"]
+        V7["v0.7 Session Host 基础与阶段收官"]
+        V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7
     end
     subgraph 第二大阶段
         direction TB
@@ -34,9 +36,10 @@ graph LR
         M2["② Interaction Layer 基础接口可用"]
         M3["③ Tool Bridge 第三方应用接入"]
         M4["④ 多角色协作能力验证"]
-        M1 --> M2 --> M3 --> M4
+        M5["⑤ 开发者文档与 SDK 发布"]
+        M1 --> M2 --> M3 --> M4 --> M5
     end
-    V6 -->|阶段递进| M1
+    V7 -->|阶段递进| M1
 ```
 
 ## 2. 第一大阶段：高质量 macOS 终端产品
@@ -51,12 +54,13 @@ graph LR
 
 | 版本 | 名称 | 核心主题 | 架构层重点 |
 |------|------|----------|-----------|
-| v0.1 | 终端内核启动 | PTY + Shell + 基础渲染 | Terminal Runtime |
-| v0.2 | 日常可用终端 | Tab、多窗口、完整仿真、剪贴板 | Terminal Runtime |
-| v0.3 | AI CLI 稳定承载 | 长会话、性能、流式输出、多轮交互 | Terminal Runtime + Session Host 雏形 |
-| v0.4 | 高效操作体验 | 分屏、搜索、快捷键体系 | Terminal Runtime |
-| v0.5 | 个性化与打磨 | 主题、配置、Profile、体验打磨 | Terminal Runtime |
-| v0.6 | Session Host 基础与阶段收官 | Session 模型、进程管理、状态维护、收尾 | Session Host + Terminal Runtime |
+| v0.1 | 终端内核启动 | PTY + Shell + 基础渲染 + 鼠标事件 | Terminal Runtime |
+| v0.2 | 日常可用终端 | Tab、多窗口、完整仿真（含 True Color）、剪贴板 | Terminal Runtime |
+| v0.3 | 高效操作体验 | 分屏、搜索、快捷键体系 | Terminal Runtime |
+| v0.4 | AI CLI 稳定承载 | 长会话、性能、流式输出、多轮交互 | Terminal Runtime |
+| v0.5 | 个性化与配置基础 | 主题、配色、偏好、Profile、连字 | Terminal Runtime |
+| v0.6 | 体验打磨与集成 | Shell 集成、URL 识别、通知、可访问性、性能终优化 | Terminal Runtime |
+| v0.7 | Session Host 基础与阶段收官 | Session 模型、进程管理、状态维护、全量回归、收尾 | Session Host + Terminal Runtime |
 
 ```mermaid
 graph LR
@@ -66,19 +70,22 @@ graph LR
     subgraph "能替代 Terminal.app"
         V2["v0.2 日常可用终端"]
     end
-    subgraph "Claude Code 跑得稳"
-        V3["v0.3 AI CLI 稳定承载"]
-    end
     subgraph "效率工具"
-        V4["v0.4 高效操作体验"]
+        V3["v0.3 高效操作体验"]
     end
-    subgraph "愿意长期用"
-        V5["v0.5 个性化与打磨"]
+    subgraph "Claude Code 跑得稳"
+        V4["v0.4 AI CLI 稳定承载"]
+    end
+    subgraph "让人愿意留下"
+        V5["v0.5 个性化与配置基础"]
+    end
+    subgraph "打磨到位"
+        V6["v0.6 体验打磨与集成"]
     end
     subgraph "为 Phase 2 铺路"
-        V6["v0.6 Session Host 基础与阶段收官"]
+        V7["v0.7 Session Host 基础与阶段收官"]
     end
-    V1 --> V2 --> V3 --> V4 --> V5 --> V6
+    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7
 ```
 
 ### 2.2 版本定义
@@ -98,17 +105,26 @@ graph LR
 - 单窗口终端渲染：等宽字体网格、光标显示与闪烁
 - 基础键盘输入：普通字符、回车、退格、方向键、Ctrl+C/D 等信号键
 - 基础滚动：输出超出可视区域时可回滚查看
+- 鼠标事件转发：支持鼠标报告模式（SGR mouse mode），使 TUI 应用（vim、top、htop 等）可正确接收鼠标事件
+
+**架构约束：**
+
+- 渲染管线必须采用增量/脏区更新设计（非全屏重绘），为 v0.4 的高吞吐量性能目标铺路
+- PTY 管理必须支持多实例并发，为 v0.2 Tab 和 v0.3 分屏铺路
+- 配置值（如字体、字号）必须通过设置存储读取，不可硬编码，为 v0.5 Profile 铺路
+- 渲染后端（CoreText）必须隔离在独立模块中，为后续切换到 Metal 加速保留路径
 
 **验收标准：**
 
 - [ ] 启动后自动进入用户默认 shell，显示正常提示符
 - [ ] 可执行 `ls`、`cd`、`echo`、`cat` 等基础命令并看到正确输出
-- [ ] 可运行 `top`，界面刷新正常，退出后终端状态恢复
-- [ ] 可运行 `vim`，能进入编辑、输入、保存退出，终端状态正确恢复
+- [ ] 可运行 `top`，界面刷新正常，鼠标点击可交互，退出后终端状态恢复
+- [ ] 可运行 `vim`，能进入编辑、输入、保存退出，鼠标选择文本正常，终端状态正确恢复
 - [ ] Ctrl+C 能中断正在运行的前台进程
 - [ ] 输出超出屏幕时可滚动查看历史内容
 - [ ] 基础 ANSI 颜色（前景/背景 8 色）正确渲染
 - [ ] 连续执行 50 条命令后不崩溃、不内存泄漏
+- [ ] vttest 基础测试项通过率 ≥ 80%
 
 #### v0.2 — 日常可用终端
 
@@ -121,11 +137,17 @@ graph LR
 - Tab 管理：新建、关闭、切换 tab，每个 tab 独立 PTY 实例
 - 多窗口支持：可打开多个独立窗口
 - 完整 xterm-256color 终端仿真：256 色、粗体/斜体/下划线/反色等文本属性
+- True Color (24-bit RGB) 支持：现代终端主题和开发工具的标准需求
 - 剪贴板集成：macOS 系统剪贴板的复制/粘贴
 - 窗口大小调整与 SIGWINCH：调整窗口大小时正确通知 PTY
 - Shell 退出处理：shell 退出时关闭对应 tab 或显示提示
 - 基础字体设置：可选择等宽字体、调整字号
 - Unicode/CJK/Emoji 正确渲染与宽度计算
+
+**架构约束：**
+
+- 终端仿真引擎必须可扩展，预留 bracketed paste mode、alternate screen buffer、OSC 序列等高级特性的扩展点，为 v0.4 AI CLI 兼容性铺路
+- Tab/窗口管理模型必须支持后续分屏嵌套（v0.3），避免 v0.3 重构视图层级
 
 **验收标准：**
 
@@ -133,43 +155,18 @@ graph LR
 - [ ] Cmd+W 关闭当前 tab，其他 tab 不受影响
 - [ ] 可打开多个窗口，各窗口独立运行
 - [ ] `echo $TERM` 输出 `xterm-256color`，256 色测试脚本正确显示
+- [ ] True Color (24-bit) 测试脚本正确显示渐变色带，无色阶断裂
 - [ ] 终端中选择文本 Cmd+C 复制，其他应用可粘贴，反之亦然
 - [ ] 调整窗口大小后 `top`/`vim` 正确重绘
 - [ ] 中文字符正确显示并占据正确列宽（如"你好"占 4 列）
 - [ ] `git log --oneline --graph` 带颜色和特殊字符的输出正确渲染
-- [ ] 可作为默认终端完成一天常规开发工作（主观评估）
+- [ ] 可在 Hi-Terms 中完成以下工作流无需切换到其他终端：git clone → git branch → vim 编辑 → git commit → git push、npm install → npm run
 
-#### v0.3 — AI CLI 稳定承载
+**外部测试节点：** v0.2 完成后发布 alpha 版本给 3–5 名外部测试者，收集真实终端使用反馈。
 
-**版本定位：** 第一大阶段的差异化关键版本。确保 Claude Code、Codex CLI 等 [AI CLI](../SSOT/glossary.md#ai-cli) 可在 Hi-Terms 中稳定运行。重点不是新增终端功能，而是深挖稳定性、性能和长会话存活能力。
+#### v0.3 — 高效操作体验
 
-**架构层重点：** [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（性能优化、大量输出处理）+ [Session Host](../SSOT/glossary.md#session-host)（基础进程管理雏形）
-
-**具体交付物：**
-
-- 大量输出性能优化：AI CLI 生成大段代码/文本时渲染不卡顿、不丢数据
-- 长会话稳定性：终端会话运行数小时不崩溃、不内存膨胀
-- 流式输出平滑渲染：AI CLI 流式输出 token 时的逐字/逐行渲染优化
-- 多轮交互支持：AI CLI 问答轮次切换、等待输入、用户澄清后继续
-- 进程树管理基础：正确追踪 shell 子进程，避免孤儿进程
-- 信号传递完整性：Ctrl+C 正确传递到 AI CLI 进程，支持优雅中断
-- 环境变量与 PATH 兼容：nvm、pyenv、conda 等版本管理器的 PATH 兼容
-- 退出码与错误处理：进程异常退出时清晰提示
-
-**验收标准：**
-
-- [ ] Claude Code 完成至少 10 轮连续多轮对话
-- [ ] Claude Code 连续运行 4 小时以上，会话不中断、不崩溃
-- [ ] AI CLI 输出 > 500 行代码时，渲染帧率 ≥ 30fps，无明显卡顿
-- [ ] 流式输出中 Ctrl+C 可中断，终端恢复正常状态
-- [ ] AI CLI 进入等待输入状态后，用户输入回车，AI CLI 正确接收并继续
-- [ ] `nvm use` 切换 Node 版本后启动 Claude Code，版本正确
-- [ ] 4 小时长会话后内存使用不超过初始值 3 倍
-- [ ] AI CLI 进程意外退出时显示清晰退出码和状态信息
-
-#### v0.4 — 高效操作体验
-
-**版本定位：** 从"能用"到"好用"。补齐影响日常效率的关键终端能力：分屏、搜索、快捷键体系。这些是 iTerm 用户迁移时最先感知的功能差距。
+**版本定位：** 从"能用"到"好用"。补齐影响日常效率的关键终端能力：分屏、搜索、快捷键体系。这些是 iTerm 用户迁移时最先感知的功能差距，也是后续 AI CLI 长时间使用验证的前提。
 
 **架构层重点：** [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（分屏、搜索、快捷键框架）
 
@@ -184,6 +181,11 @@ graph LR
 - 滚动增强：Page Up/Down、Cmd+Home/End 跳转
 - 选择增强：双击选词、三击选行
 
+**架构约束：**
+
+- 快捷键框架必须支持用户自定义绑定，为 v0.5 偏好设置铺路
+- 搜索功能的文本匹配引擎应可复用于后续的 Shell 集成特性（v0.6）
+
 **验收标准：**
 
 - [ ] Cmd+D 水平分屏，两面板各有独立 shell 互不干扰
@@ -195,11 +197,54 @@ graph LR
 - [ ] 在 vim 中 Ctrl+W 正确传递给 vim，不被应用截获
 - [ ] 双击终端中一个单词，该词被完整选中
 
-#### v0.5 — 个性化与打磨
+#### v0.4 — AI CLI 稳定承载
 
-**版本定位：** 从"好用"到"愿意用"。主题、外观配置、偏好设置是用户长期使用的关键。同时对已有能力进行体验打磨，消除粗糙边缘。本版本完成后，Hi-Terms 在[终端能力](../SSOT/glossary.md#终端能力terminal-capabilities)上应无明显短板。
+**版本定位：** 第一大阶段的差异化关键版本。确保 Claude Code、Codex CLI 等 [AI CLI](../SSOT/glossary.md#ai-cli) 可在 Hi-Terms 中稳定运行。重点不是新增终端功能，而是深挖稳定性、性能和长会话存活能力。此时用户已具备分屏、搜索和快捷键，可以在一个"好用"的终端里进行长时间稳定性验证。
 
-**架构层重点：** [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（主题、配置持久化、体验打磨）
+**架构层重点：** [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（性能优化、大量输出处理、优质 PTY 管理）
+
+**具体交付物：**
+
+- 大量输出性能优化：AI CLI 生成大段代码/文本时渲染不卡顿、不丢数据
+- 长会话稳定性：终端会话运行数小时不崩溃、不内存膨胀
+- 流式输出平滑渲染：AI CLI 流式输出 token 时的逐字/逐行渲染优化
+- 多轮交互支持：AI CLI 问答轮次切换、等待输入、用户澄清后继续
+- 优质 PTY 管理：正确追踪 shell 子进程树，避免孤儿进程，进程退出检测与异常处理
+- 信号传递完整性：Ctrl+C 正确传递到 AI CLI 进程，支持优雅中断
+- 环境变量与 PATH 兼容：nvm、pyenv、conda 等版本管理器的 PATH 兼容
+- 退出码与错误处理：进程异常退出时清晰提示
+
+**架构约束：**
+
+- 性能优化不得破坏 v0.1 的增量渲染架构；如需 Metal 加速，通过渲染后端替换实现
+- PTY 进程管理的抽象层应为 v0.7 的 Session 模型预留可对接的接口边界
+
+**时间盒策略：** 本版本设定最长 N 周时间盒。超时未达标的性能指标降级为已知问题，在 v0.6 体验打磨阶段回收处理，不阻塞后续版本推进。
+
+**验收标准：**
+
+核心验收标准（使用可控脚本验证，不依赖特定 AI CLI 版本）：
+
+- [ ] 模拟脚本进行 10 轮交互式 I/O，Hi-Terms 保持 PTY 稳定、信号转发正确
+- [ ] 压力测试脚本连续运行 4 小时以上，会话不中断、不崩溃
+- [ ] 高吞吐量输出（模拟脚本输出 > 500 行/秒）时，渲染帧率 ≥ 30fps，无明显卡顿
+- [ ] 流式输出中 Ctrl+C 可中断，终端恢复正常状态
+- [ ] 交互式脚本进入等待输入状态后，用户输入回车，脚本正确接收并继续
+- [ ] `nvm use` 切换 Node 版本后启动子进程，版本正确
+- [ ] 4 小时长会话后内存使用不超过初始值 3 倍
+- [ ] 子进程意外退出时显示清晰退出码和状态信息
+- [ ] 无孤儿进程残留（进程树完全清理）
+
+补充集成验证（不作为版本验收门控）：
+
+- [ ] Claude Code 在 Hi-Terms 中完成至少 10 轮连续多轮对话
+- [ ] Claude Code 连续运行 4 小时以上，会话不中断
+
+#### v0.5 — 个性化与配置基础
+
+**版本定位：** 从"好用"到"愿意留下"。主题、外观配置、偏好设置是用户长期使用的关键。本版本聚焦配置基础设施建设。
+
+**架构层重点：** [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（主题、配置持久化）
 
 **具体交付物：**
 
@@ -208,25 +253,55 @@ graph LR
 - 偏好设置面板：字体、字号、光标样式、光标闪烁、窗口透明度、滚动缓冲区大小等
 - Profile 支持：可创建多个 Profile（不同的 shell、字体、主题组合），tab 可指定 Profile
 - 启动配置：默认 shell、启动时执行的命令、默认窗口大小和位置
-- Shell 集成增强：当前目录追踪（tab 标题显示当前路径）
-- URL 识别与点击：终端输出中的 URL 可 Cmd+Click 打开
-- 长命令完成通知：长时间运行命令完成时的 macOS 通知
-- 性能最终优化：大量 tab + 分屏场景下不卡顿
+- 字体连字（Ligatures）支持：Fira Code、JetBrains Mono 等开发者常用连字字体的正确渲染
+
+**架构约束：**
+
+- 配置系统必须支持导入/导出，为后续用户迁移和备份铺路
+- Profile 数据结构应可扩展，为 v0.7 Session 模型中的 Session 关联 Profile 预留字段
 
 **验收标准：**
 
 - [ ] 切换主题后终端实时预览新配色，关闭重启后配色保留
 - [ ] 可创建 ≥ 2 个不同 Profile，新建 tab 时可选择使用哪个 Profile
 - [ ] 偏好设置调整字体/字号/光标样式，更改即时生效
+- [ ] 使用 Fira Code 字体时，`=>` `!=` `>=` 等组合正确渲染为连字
+- [ ] 配置可导出为文件，在另一台 Mac 上导入后恢复完整偏好
+
+#### v0.6 — 体验打磨与集成
+
+**版本定位：** 从"愿意留下"到"离不开"。对已有能力进行体验打磨，补齐 Shell 集成、URL 识别等提升长期使用体验的功能，并建立可访问性基础。本版本完成后，Hi-Terms 在[终端能力](../SSOT/glossary.md#终端能力terminal-capabilities)上应无明显短板。
+
+**架构层重点：** [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（Shell 集成、体验打磨、可访问性）
+
+**具体交付物：**
+
+- Shell 集成增强：当前目录追踪（tab 标题显示当前路径）
+- URL 识别与点击：终端输出中的 URL 可 Cmd+Click 打开
+- 长命令完成通知：长时间运行命令完成时的 macOS 通知
+- 可访问性基础：VoiceOver 支持、键盘完整导航、高对比度模式兼容
+- 性能最终优化：大量 tab + 分屏场景下不卡顿；回收 v0.4 时间盒中降级的性能指标
+- 已知问题清理：v0.1–v0.5 积累的已知问题集中清理
+
+**架构约束：**
+
+- 可访问性实现应遵循 macOS Accessibility API 标准模式，为后续增强（如屏幕阅读器完整支持）铺路
+- Shell 集成功能（目录追踪）应通过 OSC 序列或 shell hook 实现，不依赖进程特定的 hack
+
+**验收标准：**
+
 - [ ] Tab 标题自动显示当前工作目录
 - [ ] 终端中的 URL 可通过 Cmd+Click 在浏览器中打开
 - [ ] `sleep 60` 完成后收到 macOS 通知
+- [ ] VoiceOver 可读取终端当前行内容，可通过键盘在 tab 间导航
 - [ ] 同时打开 10 个 tab + 4 个分屏面板，所有面板输入响应延迟 < 50ms
-- [ ] 日常使用一周无功能缺失导致必须切回 iTerm/Terminal（团队内部测试）
+- [ ] v0.4 中降级的性能指标（如有）全部达标
 
-#### v0.6 — Session Host 基础与阶段收官
+**过程性要求（dogfooding gate，不作为版本验收硬性标准）：** 团队成员日常使用一周，记录需切回 iTerm/Terminal 的场景并评估严重性。
 
-**版本定位：** 为第二大阶段铺路。搭建 [Session Host](../SSOT/glossary.md#session-host) 基础框架，建立进程管理和状态维护的核心抽象。同时完成第一大阶段的收尾工作：稳定性强化、全量回归、已知问题清理。本版本完成后，第一大阶段全部完成。
+#### v0.7 — Session Host 基础与阶段收官
+
+**版本定位：** 为第二大阶段铺路。搭建 [Session Host](../SSOT/glossary.md#session-host) 基础框架，建立进程管理和状态维护的核心抽象。此时团队已有 v0.1–v0.6 的完整实现经验，能够基于真实终端行为设计 Session 模型。同时完成第一大阶段的收尾工作：全量回归、稳定性强化。本版本完成后，第一大阶段全部完成。
 
 **架构层重点：** [Session Host](../SSOT/glossary.md#session-host)（基础框架、进程管理、状态维护）+ [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（稳定性收尾）
 
@@ -237,8 +312,13 @@ graph LR
 - 基础状态维护：每个 Session 维护"运行中/已退出"等基础状态，为第二大阶段完整 7 状态模型（参见[术语表 — 会话状态](../SSOT/glossary.md#会话状态session-state)）预留扩展点
 - Session 持久化基础：Session 元数据的本地存储
 - 内部 Session 管理接口：定义内部 API（create、destroy、list、getState），不对外暴露，为第二大阶段的 [Interaction Layer](../SSOT/glossary.md#interaction-layer) 提供底层支撑
-- 全量回归测试：v0.1–v0.5 所有功能回归 + 性能回归
+- 全量回归测试：v0.1–v0.6 所有功能回归 + 性能回归
 - 稳定性强化：崩溃上报、日志体系完善
+
+**架构约束：**
+
+- Session 模型必须采用 protocol/trait 模式设计，为第二大阶段 Interaction Layer 的 `start_session`/`attach_session` 等外部接口预留扩展点
+- 内部 Session API 的调用约定应与未来外部 API 保持一致（相同的参数语义和错误模型），降低第二大阶段的适配成本
 
 **验收标准：**
 
@@ -247,8 +327,8 @@ graph LR
 - [ ] 通过内部 API 可列出所有活跃 Session 及其基础状态
 - [ ] Session 的创建、销毁事件被正确记录（日志可查）
 - [ ] Session 元数据可被持久化到本地存储，应用重启后可读取上次的 Session 记录
-- [ ] 内部 Session API 的设计可自然扩展为[需求文档 §5.3](hi-terms-requirements.md#53-interaction-layer第二大阶段核心) 定义的 `start_session`、`attach_session` 等外部接口（设计评审确认）
-- [ ] v0.1–v0.5 全部验收标准回归通过
+- [ ] 内部 Session API 采用 protocol/trait 模式，添加 `start_session`、`attach_session` 等方法只需在现有协议上实现新方法，无需重构 Session 内部结构（代码审查确认）
+- [ ] v0.1–v0.6 全部验收标准回归通过
 - [ ] 连续 7 天日常使用无 crash（团队内部 dogfooding）
 
 ### 2.3 关键挑战
@@ -256,7 +336,17 @@ graph LR
 - 如何在有限资源下按版本节奏高效迭代终端基础能力，逐步追平 macOS Terminal / iTerm
 - 如何在第一大阶段就设计好架构，为第二大阶段的会话能力预留扩展空间
 - 如何让 [AI CLI](../SSOT/glossary.md#ai-cli) 在 Hi-Terms 中获得稳定、流畅的运行体验
-- 如何在 v0.3 优先验证 AI CLI 差异化价值的同时，不阻塞后续终端能力的演进
+- 如何在 v0.4 验证 AI CLI 差异化价值的同时，不阻塞后续终端能力的演进
+
+#### 2.3.1 风险缓解
+
+| 风险 | 缓解措施 |
+|------|---------|
+| v0.4 AI CLI 性能优化成为无底洞 | 设定最长 N 周时间盒；超时未达标指标降级为已知问题，在 v0.6 打磨阶段回收 |
+| 缺乏外部用户真实反馈 | v0.2 完成后发布 alpha 版本给 3–5 名外部测试者 |
+| AI CLI 工具自身快速迭代导致兼容性问题 | 验收测试使用行为模式脚本（模拟流式输出、多轮交互、信号中断），不绑定特定 AI CLI 版本 |
+| 早期架构决策限制后续扩展 | 每个版本定义明确的架构约束，确保关键扩展点从一开始就被预留 |
+| macOS 系统 API 变化（年度 WWDC 更新） | 明确最低 macOS 版本（参见[技术选型决策](../decisions/hi-terms-technical-decisions.md)）；隔离 macOS API 依赖 |
 
 ### 2.4 阶段完成标志
 
@@ -280,6 +370,9 @@ graph LR
 2. **[Interaction Layer](../SSOT/glossary.md#interaction-layer) 基础接口可用** — `start_session`、`attach_session`、`send_input`、`read_output`、`get_session_state`、`interrupt_session` 等基础接口可用
 3. **[Tool Bridge](../SSOT/glossary.md#tool-bridge) 第三方应用接入可用** — 外部 macOS 应用可通过 Tool Bridge 启动、连接和驱动 AI CLI 会话
 4. **[多角色协作](../SSOT/glossary.md#多角色协作multi-role-collaboration)能力验证** — 多个角色围绕同一会话协作，输入流不冲突，状态变化可被各方感知
+5. **开发者文档与 SDK 发布** — API 参考文档、接入指南、示例应用、SDK 包（如适用），使第三方开发者可独立完成接入
+
+> 每个第二大阶段里程碑将在第一大阶段 v0.6–v0.7 期间分解为带有明确交付物和验收标准的版本化发布，届时团队已具备足够的实现经验来准确评估第二大阶段的工作量。
 
 ### 3.3 关键挑战
 
@@ -296,6 +389,7 @@ graph LR
 - 第三方 macOS 应用可以通过 Hi-Terms 驱动 AI CLI 完成多轮任务（如[需求文档 §2.2](hi-terms-requirements.md#22-第二大阶段主场景第三方应用驱动-ai-cli-会话) 的 Telegram bot 场景端到端可用）
 - 高层会话接口和[底层终端注入](../SSOT/glossary.md#底层终端注入raw-terminal-injection)两条路径均可用
 - 多角色协作场景下会话稳定，输入输出边界清晰
+- 第三方开发者可通过文档和 SDK 独立完成接入
 
 ## 4. 阶段递进关系与架构连续性
 
@@ -318,4 +412,4 @@ graph TB
     IL --> TB2
 ```
 
-第一大阶段的架构决策直接影响第二大阶段的扩展成本。[Terminal Runtime](../SSOT/glossary.md#terminal-runtime) 和 Session Host 的基础设计，必须在第一大阶段就考虑第二大阶段的会话接入需求。
+第一大阶段的架构决策直接影响第二大阶段的扩展成本。[Terminal Runtime](../SSOT/glossary.md#terminal-runtime) 和 Session Host 的基础设计，必须在第一大阶段就考虑第二大阶段的会话接入需求。各版本的架构约束段落（见 §2.2）明确了这些跨版本的架构承诺。

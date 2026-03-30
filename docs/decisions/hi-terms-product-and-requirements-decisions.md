@@ -6,6 +6,7 @@
 - `docs/reqs/hi-terms-vision.md` — 愿景文档
 - `docs/reqs/hi-terms-requirements.md` — 需求文档
 - `docs/reqs/hi-terms-roadmap.md` — Roadmap 文档
+- `docs/decisions/hi-terms-technical-decisions.md` — 技术选型决策
 - `docs/SSOT/glossary.md` — 术语表（术语权威定义）
 
 ## 1. 背景

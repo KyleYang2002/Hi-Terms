@@ -75,18 +75,17 @@ Hi-Terms 是一个面向 macOS 的终端产品，采用[两大阶段](../SSOT/gl
 
 ### 评估标准
 
-v0.1 早期必须完成对 SwiftTerm 的系统评估，评估维度包括：
+v0.0 必须完成对 SwiftTerm 的系统评估（详细评估维度、通过标准和流程参见 [V0.0 技术设计文档 §4](../design/hi-terms-v0.0-technical-design.md#4-swiftterm-评估方案)），核心评估方向包括：
 
-| 维度 | 标准 |
-| --- | --- |
-| VT100/xterm 转义序列覆盖率 | 通过 vttest 基础测试套件 |
-| 解析性能 | 大量输出（>500 行/秒）下的解析延迟可接受 |
-| 高级特性支持 | 支持 bracketed paste mode、alternate screen buffer、mouse reporting、True Color（24-bit） |
-| API 可扩展性 | 能否适配第二大阶段的 [Session](../SSOT/glossary.md#会话session) 状态识别需求（如区分 Shell prompt 与命令输出） |
+- VT100/xterm 转义序列兼容性（vttest 基础测试套件）
+- 解析性能（吞吐量基准）
+- 高级特性支持（alternate screen buffer、SGR mouse mode、bracketed paste、True Color）
+- API 可集成性（能否封装在 TerminalParser protocol 后）
+- ScreenBuffer 数据可访问性（能否支撑自定义渲染）
 
 ### 影响与约束
 
-- v0.1 早期需要分配时间完成 SwiftTerm 评估，评估结果直接影响后续开发路线
+- v0.0 需要分配时间完成 SwiftTerm 评估，评估结果直接影响后续开发路线
 - 如评估不通过，需预留切换方案的时间（退回到自研或 libvterm 封装）
 - 无论使用哪个引擎，终端仿真层的 API 接口应保持抽象，降低引擎切换成本
 
@@ -149,7 +148,7 @@ v0.1 早期必须完成对 SwiftTerm 的系统评估，评估维度包括：
 - 需要 Apple Developer 账号（年费 $99）进行代码签名和公证
 - 需要在 CI 中集成公证流程（`notarytool`）
 - 需要自行实现或集成更新检查机制——推荐使用 [Sparkle](https://sparkle-project.org/) 框架，macOS 开源应用中广泛使用的自动更新方案
-- DMG 打包流程需要在 v0.1 阶段建立
+- DMG 打包流程需要在 v0.0 阶段建立（作为构建链路验证的一部分）
 
 ---
 

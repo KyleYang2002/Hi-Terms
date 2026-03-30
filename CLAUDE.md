@@ -14,8 +14,10 @@ The primary documentation language is Chinese (中文).
 
 - `docs/reqs/hi-terms-vision.md` — product vision and phase definitions (authoritative source for two-phase model)
 - `docs/reqs/hi-terms-requirements.md` — capabilities, scenarios, boundaries, architecture, and detailed requirements
-- `docs/reqs/hi-terms-roadmap.md` — phase milestones, challenges, and exit criteria
+- `docs/reqs/hi-terms-roadmap.md` — phase milestones (v0.0–v0.7 + Phase 2), challenges, and exit criteria
 - `docs/decisions/hi-terms-product-and-requirements-decisions.md` — product positioning decisions
+- `docs/decisions/hi-terms-technical-decisions.md` — technical decisions (Swift+AppKit, SwiftTerm, CoreText, distribution, testing, macOS 14)
+- `docs/design/hi-terms-v0.0-technical-design.md` — v0.0 engineering baseline: module structure, data flow, SwiftTerm evaluation plan, threading model
 
 ## Architecture (Four-Layer Design)
 
@@ -31,6 +33,12 @@ The primary documentation language is Chinese (中文).
 - Phase 2: external apps interact with **session objects** (with identity, state, lifecycle), not anonymous terminal buffers
 - Phase 2 primary scenario: third-party macOS apps driving AI CLI sessions (e.g., a Telegram bot triggering Claude Code via Hi-Terms)
 
+## Phase 1 Versions
+
+- **v0.0** — Engineering baseline & tech validation (app skeleton, module structure, SwiftTerm evaluation, test scaffolding). No user-facing features.
+- **v0.1** — Terminal kernel (PTY, shell, parser, rendering, input, scrolling, mouse events)
+- **v0.2–v0.7** — Progressive terminal capability (tabs, split panes, AI CLI stability, themes, shell integration, Session Host foundation)
+
 ## Current State
 
-Pre-implementation — the repo contains product vision, requirements, roadmap, and decision documents. No build system, tests, or source code yet.
+Pre-implementation — the repo contains product vision, requirements, roadmap, design, and decision documents. No build system, tests, or source code yet. Next step: implement v0.0.

@@ -12,7 +12,9 @@ The primary documentation language is Chinese (中文).
 
 ## Key Documents
 
-- `docs/reqs/hi-terms-vision-and-initial-requirements.md` — vision and initial requirements
+- `docs/reqs/hi-terms-vision.md` — product vision and phase definitions (authoritative source for two-phase model)
+- `docs/reqs/hi-terms-requirements.md` — capabilities, scenarios, boundaries, architecture, and detailed requirements
+- `docs/reqs/hi-terms-roadmap.md` — phase milestones, challenges, and exit criteria
 - `docs/decisions/hi-terms-product-and-requirements-decisions.md` — product positioning decisions
 
 ## Architecture (Four-Layer Design)
@@ -31,4 +33,4 @@ The primary documentation language is Chinese (中文).
 
 ## Current State
 
-Pre-implementation — the repo contains only product vision and decision documents. No build system, tests, or source code yet.
+Pre-implementation — the repo contains product vision, requirements, roadmap, and decision documents. No build system, tests, or source code yet.

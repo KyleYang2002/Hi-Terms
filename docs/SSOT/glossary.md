@@ -82,7 +82,7 @@
 
 **关联术语:** [一等对象](#一等对象first-class-object)、[会话生命周期](#会话生命周期session-lifecycle)、[会话状态](#会话状态session-state)、[Session Host](#session-host)
 
-> **命名辨析：** 技术设计文档中的 `TerminalSession`（位于 TerminalUI 模块）是 Terminal Runtime 层的数据管线协调器，负责串联 PTY → Parser → ScreenBuffer → Renderer。它与 Session Host 层管理的"会话"（Session）是不同概念——前者是运行时数据流编排，后者是具备身份、状态和生命周期的会话抽象。详见[技术设计文档 §2.3 TerminalUI 澄清](../design/hi-terms-v0.0-technical-design.md)。
+> **命名说明：** 技术设计文档中的 `TerminalPipeline`（位于 TerminalUI 模块）是 Terminal Runtime 层的数据管线协调器，负责串联 PTY → Parser → ScreenBuffer → Renderer。它与 Session Host 层管理的"会话"（Session）是不同概念——前者是运行时数据流编排，后者是具备身份、状态和生命周期的会话抽象。详见[技术设计文档 §2.3 TerminalUI](../design/hi-terms-v0.0-technical-design.md)。
 
 ### 一等对象（First-class Object）
 

@@ -42,4 +42,27 @@ The primary documentation language is Chinese (中文).
 
 ## Current State
 
-Pre-implementation — the repo contains product vision, requirements, roadmap, design, and decision documents. No build system, tests, or source code yet. Next step: implement v0.0.
+V0.0 engineering baseline implemented. The repo now has:
+- Xcode project (via XcodeGen `project.yml`) with HiTerms app target and 6 test targets
+- 5 SPM packages: TerminalCore, PTYKit, TerminalRenderer, TerminalUI, Configuration
+- SwiftTerm v1.13.0 adopted (Strategy B — SwiftTerm owns state, Hi-Terms reads cells)
+- SwiftTermAdapter wrapping SwiftTerm.Terminal behind TerminalParser protocol
+- PTYProcess spike (forkpty + DispatchIO)
+- OSLog subsystems configured (com.hiterms.pty/terminal/renderer/app)
+- 40 tests passing across all modules
+- DMG packaging script, vttest automation framework, performance baseline tooling
+- `Tools/verify-acceptance.sh` for automated A01-A11 verification
+
+Next step: implement v0.1 (terminal kernel — full PTY+shell+rendering).
+
+## Development Workflow
+
+- `make ci` — 本地 CI 全流程（构建 + lint + 测试）
+- `make test` — 运行全部测试
+- `make test-unit` — 仅运行单元测试（跳过集成测试）
+- `make build` — Debug 构建
+- `make lint` — SwiftLint 检查（可选，需 `brew install swiftlint`）
+- `make clean` — 清理构建产物
+- `make generate` — 重新生成 Xcode 项目
+- `./Tools/install-hooks.sh` — 安装 Git pre-commit hook
+- GitHub Actions CI 在 push/PR 到 main 时自动运行构建和测试

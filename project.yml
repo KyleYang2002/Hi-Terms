@@ -1,0 +1,152 @@
+name: HiTerms
+
+options:
+  bundleIdPrefix: com.fortuneyang2026
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_VERSION: "6.0"
+
+packages:
+  TerminalCore:
+    path: Packages/TerminalCore
+  PTYKit:
+    path: Packages/PTYKit
+  TerminalRenderer:
+    path: Packages/TerminalRenderer
+  TerminalUI:
+    path: Packages/TerminalUI
+  Configuration:
+    path: Packages/Configuration
+
+targets:
+  HiTerms:
+    type: application
+    platform: macOS
+    sources:
+      - path: HiTermsApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fortuneyang2026.hiterms
+        INFOPLIST_FILE: HiTermsApp/Info.plist
+        CODE_SIGN_ENTITLEMENTS: HiTermsApp/HiTerms.entitlements
+        ENABLE_APP_SANDBOX: NO
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+        PRODUCT_NAME: HiTerms
+        DEVELOPMENT_TEAM: A3KUGD96RV
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - package: TerminalUI
+      - package: Configuration
+
+  TerminalCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Packages/TerminalCore/Tests/TerminalCoreTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_APP_SANDBOX: NO
+    dependencies:
+      - package: TerminalCore
+
+  PTYKitTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Packages/PTYKit/Tests/PTYKitTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_APP_SANDBOX: NO
+    dependencies:
+      - package: PTYKit
+
+  TerminalRendererTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Packages/TerminalRenderer/Tests/TerminalRendererTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_APP_SANDBOX: NO
+    dependencies:
+      - package: TerminalRenderer
+
+  TerminalUITests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Packages/TerminalUI/Tests/TerminalUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_APP_SANDBOX: NO
+    dependencies:
+      - package: TerminalCore
+      - package: TerminalRenderer
+      - package: PTYKit
+      - package: TerminalUI
+
+  ConfigurationTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Packages/Configuration/Tests/ConfigurationTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_APP_SANDBOX: NO
+    dependencies:
+      - package: Configuration
+
+  IntegrationTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/IntegrationTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_APP_SANDBOX: NO
+    dependencies:
+      - package: TerminalCore
+      - package: PTYKit
+      - package: TerminalRenderer
+      - package: TerminalUI
+      - package: Configuration
+      - target: HiTerms
+
+schemes:
+  HiTerms:
+    build:
+      targets:
+        HiTerms: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: TerminalCoreTests
+          parallelizable: true
+        - name: PTYKitTests
+          parallelizable: true
+        - name: TerminalRendererTests
+          parallelizable: true
+        - name: TerminalUITests
+          parallelizable: true
+        - name: ConfigurationTests
+          parallelizable: true
+        - name: IntegrationTests
+          parallelizable: false
+    archive:
+      config: Release

@@ -1,0 +1,16 @@
+# Hi-Terms SwiftLint 配置
+# 最小化配置，仅排除构建产物和调整少量规则
+
+excluded:
+  - build
+  - .build
+  - DerivedData
+
+disabled_rules:
+  - trailing_whitespace
+  - line_length
+
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - force_unwrapping

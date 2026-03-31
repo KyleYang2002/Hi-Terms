@@ -1,0 +1,25 @@
+#!/bin/bash
+# Git pre-commit hook
+# 安装: ./Tools/install-hooks.sh
+set -euo pipefail
+
+# 获取暂存的 Swift 文件
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACM -- '*.swift' || true)
+
+# 检查合并冲突标记
+if [ -n "$STAGED_SWIFT" ]; then
+    CONFLICT=$(echo "$STAGED_SWIFT" | xargs grep -l '<<<<<<<' 2>/dev/null || true)
+    if [ -n "$CONFLICT" ]; then
+        echo "错误: 发现合并冲突标记:"
+        echo "$CONFLICT"
+        exit 1
+    fi
+fi
+
+# SwiftLint（已安装时）
+if [ -n "$STAGED_SWIFT" ] && command -v swiftlint >/dev/null 2>&1; then
+    echo "$STAGED_SWIFT" | xargs swiftlint lint --quiet --strict 2>/dev/null || {
+        echo "SwiftLint 检查未通过，请修复后重新提交"
+        exit 1
+    }
+fi

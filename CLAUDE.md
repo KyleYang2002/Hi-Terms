@@ -17,6 +17,7 @@ The primary documentation language is Chinese (中文).
 - `docs/reqs/hi-terms-roadmap.md` — phase milestones (v0.0–v0.7 + Phase 2), challenges, and exit criteria
 - `docs/decisions/hi-terms-product-and-requirements-decisions.md` — product positioning decisions
 - `docs/decisions/hi-terms-technical-decisions.md` — technical decisions (Swift+AppKit, SwiftTerm, CoreText, distribution, testing, macOS 14)
+- `docs/reqs/hi-terms-v0.0-acceptance.md` — v0.0 acceptance criteria (SSOT for v0.0 verification)
 - `docs/design/hi-terms-v0.0-technical-design.md` — v0.0 engineering baseline: module structure, data flow, SwiftTerm evaluation plan, threading model
 
 ## Architecture (Four-Layer Design)

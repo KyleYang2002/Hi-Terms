@@ -9,6 +9,7 @@
 - [产品定位与需求决策](../decisions/hi-terms-product-and-requirements-decisions.md)
 - [技术选型决策](../decisions/hi-terms-technical-decisions.md)
 - [V0.0 技术设计](../design/hi-terms-v0.0-technical-design.md)（工程基线技术设计）
+- [V0.0 验收标准](hi-terms-v0.0-acceptance.md)（V0.0 验收标准权威来源）
 - [术语表](../SSOT/glossary.md)（术语权威定义）
 
 > [两大阶段](../SSOT/glossary.md#两大阶段two-phase-model)的定义与递进关系，参见[愿景文档 §1](hi-terms-vision.md#1-产品愿景)。
@@ -116,19 +117,7 @@ graph LR
 - OSLog 日志基础：各模块日志子系统配置
 - 构建与打包链路：从代码到可签名 DMG 的完整流程
 
-**验收标准：**
-
-- [ ] `xcodebuild build` 成功，无 warning（允许第三方依赖 warning）
-- [ ] 运行应用，显示空白 NSWindow，无 crash
-- [ ] `xcodebuild test` 通过，所有测试 target 至少有 1 个 passing test
-- [ ] SwiftTerm 评估文档存在，包含各维度评估结果和明确的采用/不采用决策
-- [ ] TerminalParser protocol 已定义，有至少一个实现（SwiftTerm 封装或 stub）
-- [ ] ScreenBuffer 类型已定义，可创建实例并读写 cell 数据（有测试验证）
-- [ ] PTYProcess 可创建 PTY 实例并启动 `/bin/echo hello`，读取输出（有测试验证）
-- [ ] vttest 至少 1 组基础测试可通过自动化脚本运行并产出结果
-- [ ] 存在 ≥ 1 组性能基准测试，可执行并输出数值
-- [ ] OSLog 日志在 Console.app 中可按子系统过滤查看
-- [ ] 打包脚本可生成 DMG 文件
+**验收标准：** 参见 [V0.0 验收标准](hi-terms-v0.0-acceptance.md)（权威来源，含 11 个验收项的详细验证步骤、条件性验收规则和失败处理策略）。
 
 #### v0.1 — 终端内核启动
 

@@ -29,7 +29,7 @@ graph LR
         V4["v0.4 AI CLI 稳定承载"]
         V5["v0.5 个性化与配置基础"]
         V6["v0.6 体验打磨与集成"]
-        V7["v0.7 Session Host 基础与阶段收官"]
+        V7["v0.7 Session Host 完善与阶段收官"]
         V0 --> V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7
     end
     subgraph 第二大阶段
@@ -57,13 +57,13 @@ graph LR
 | 版本 | 名称 | 核心主题 | 架构层重点 |
 |------|------|----------|-----------|
 | v0.0 | 工程基线与技术验证 | 应用骨架、模块结构、SwiftTerm 评估、测试骨架 | 工程基础设施 |
-| v0.1 | 终端内核启动 | PTY + Shell + 基础渲染 + 鼠标事件 | Terminal Runtime |
+| v0.1 | 终端内核启动 | PTY + Shell + 基础渲染 + 鼠标事件 + Session Foundation | Terminal Runtime + Session Host 基础 |
 | v0.2 | 日常可用终端 | Tab、多窗口、完整仿真（含 True Color）、剪贴板 | Terminal Runtime |
-| v0.3 | 高效操作体验 | 分屏、搜索、快捷键体系 | Terminal Runtime |
+| v0.3 | 高效操作体验 | 分屏、搜索、快捷键体系、CJK/Emoji 边界修正 | Terminal Runtime |
 | v0.4 | AI CLI 稳定承载 | 长会话、性能、流式输出、多轮交互 | Terminal Runtime |
 | v0.5 | 个性化与配置基础 | 主题、配色、偏好、Profile、连字 | Terminal Runtime |
 | v0.6 | 体验打磨与集成 | Shell 集成、URL 识别、通知、可访问性、性能终优化 | Terminal Runtime |
-| v0.7 | Session Host 基础与阶段收官 | Session 模型、进程管理、状态维护、全量回归、收尾 | Session Host + Terminal Runtime |
+| v0.7 | Session Host 完善与阶段收官 | Session 持久化、Phase 2 接口预留、全量回归、收尾 | Session Host + Terminal Runtime |
 
 ```mermaid
 graph LR
@@ -89,7 +89,7 @@ graph LR
         V6["v0.6 体验打磨与集成"]
     end
     subgraph "为 Phase 2 铺路"
-        V7["v0.7 Session Host 基础与阶段收官"]
+        V7["v0.7 Session Host 完善与阶段收官"]
     end
     V0 --> V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7
 ```
@@ -134,7 +134,7 @@ graph LR
 
 **版本定位：** 从零到一，搭建最小可运行的终端内核，跑通 [PTY](../SSOT/glossary.md#ptypseudo-terminal) + Shell + 渲染管线。
 
-**架构层重点：** [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（PTY、Shell/子进程、基础渲染）
+**架构层重点：** [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（PTY、Shell/子进程、基础渲染）+ [Session Host](../SSOT/glossary.md#session-host) 基础（Session Foundation）
 
 **前置依赖：** v0.0 已完成工程骨架、模块结构、SwiftTerm 评估和测试基础设施。
 
@@ -147,6 +147,9 @@ graph LR
 - 基础键盘输入：普通字符、回车、退格、方向键、Ctrl+C/D 等信号键
 - 基础滚动：输出超出可视区域时可回滚查看
 - 鼠标事件转发：支持鼠标报告模式（SGR mouse mode），使 TUI 应用（vim、top、htop 等）可正确接收鼠标事件
+- Session Foundation 基础：SessionID 类型定义、Session 与 PTY 的映射关系、基础生命周期字段（创建时间、启动命令）、基础状态枚举子集（running/exited）、内部 Session registry 与 query 能力
+
+> **Session Foundation 前移说明：** 迭代评审（2026-03-30，P0-2）识别了 Session Host 基础抽象放在 v0.7 与 v0.4 AI CLI 稳定承载目标之间的依赖倒置问题。将 Session Foundation 前移到 v0.1，使后续版本（v0.2 Tab、v0.4 进程管理）可基于统一的 Session 抽象构建，避免 v0.7 集中重构。
 
 **架构约束：**
 
@@ -154,6 +157,8 @@ graph LR
 - PTY 管理必须支持多实例并发，为 v0.2 Tab 和 v0.3 分屏铺路
 - 配置值（如字体、字号）必须通过设置存储读取，不可硬编码，为 v0.5 Profile 铺路
 - 渲染后端（CoreText）必须隔离在独立模块中，为后续切换到 Metal 加速保留路径
+- Session 模型必须采用 protocol 模式设计，为后续版本渐进扩展 Session 能力和第二大阶段 Interaction Layer 预留扩展点
+- PTY 实例必须通过 Session 持有和管理（而非直接由视图层持有），确保 Session 作为 PTY 生命周期的唯一管理者
 
 **验收标准：**
 
@@ -164,8 +169,11 @@ graph LR
 - [ ] Ctrl+C 能中断正在运行的前台进程
 - [ ] 输出超出屏幕时可滚动查看历史内容
 - [ ] 基础 ANSI 颜色（前景/背景 8 色）正确渲染
-- [ ] 连续执行 50 条命令后不崩溃、不内存泄漏
+- [ ] 连续执行 50 条命令后不崩溃，Instruments Leaks 检测无泄漏
 - [ ] vttest 基础测试项通过率 ≥ 80%
+- [ ] 每个终端窗口对应一个 Session 实例，Session 具有唯一 ID
+- [ ] Session 正确持有并管理其关联的 PTY 实例
+- [ ] 通过内部 registry 可查询当前所有活跃 Session 及其基础状态（running/exited）
 
 #### v0.2 — 日常可用终端
 
@@ -183,7 +191,7 @@ graph LR
 - 窗口大小调整与 SIGWINCH：调整窗口大小时正确通知 PTY
 - Shell 退出处理：shell 退出时关闭对应 tab 或显示提示
 - 基础字体设置：可选择等宽字体、调整字号
-- Unicode/CJK/Emoji 正确渲染与宽度计算
+- 基础 Unicode/CJK/Emoji 渲染与宽度计算：常见中文字符、常见 Emoji（非组合序列）的正确显示与列宽（复杂边界情况如组合 Emoji 序列、罕见 CJK 扩展区字符在 v0.3 处理）
 
 **架构约束：**
 
@@ -221,6 +229,7 @@ graph LR
 - 快捷键与终端按键隔离：Cmd 系快捷键归应用、Ctrl 系按键传递给终端
 - 滚动增强：Page Up/Down、Cmd+Home/End 跳转
 - 选择增强：双击选词、三击选行
+- Unicode/CJK/Emoji 复杂边界情况：组合 Emoji 序列（如肤色修饰符、ZWJ 序列）宽度正确、罕见 CJK 扩展区字符渲染、混合宽度文本的光标定位精确性
 
 **架构约束：**
 
@@ -237,6 +246,9 @@ graph LR
 - [ ] 正则搜索可用（如搜索 `error.*failed`）
 - [ ] 在 vim 中 Ctrl+W 正确传递给 vim，不被应用截获
 - [ ] 双击终端中一个单词，该词被完整选中
+- [ ] 组合 Emoji（如 👨‍👩‍👧‍👦）显示为单个字形并占据正确列宽
+- [ ] CJK 扩展 B 区字符（如 𠀀）正确渲染，不显示为豆腐块
+- [ ] 在中英文混合行中，光标位置始终与字符边界对齐
 
 #### v0.4 — AI CLI 稳定承载
 
@@ -249,7 +261,7 @@ graph LR
 - 大量输出性能优化：AI CLI 生成大段代码/文本时渲染不卡顿、不丢数据
 - 长会话稳定性：终端会话运行数小时不崩溃、不内存膨胀
 - 流式输出平滑渲染：AI CLI 流式输出 token 时的逐字/逐行渲染优化
-- 多轮交互支持：AI CLI 问答轮次切换、等待输入、用户澄清后继续
+- 交互式终端行为稳定承载：正确传递多轮 I/O、识别可观察的进程阻塞与等待输入状态、保障输出连续性
 - 优质 PTY 管理：正确追踪 shell 子进程树，避免孤儿进程，进程退出检测与异常处理
 - 信号传递完整性：Ctrl+C 正确传递到 AI CLI 进程，支持优雅中断
 - 环境变量与 PATH 兼容：nvm、pyenv、conda 等版本管理器的 PATH 兼容
@@ -258,7 +270,9 @@ graph LR
 **架构约束：**
 
 - 性能优化不得破坏 v0.1 的增量渲染架构；如需 Metal 加速，通过渲染后端替换实现
-- PTY 进程管理的抽象层应为 v0.7 的 Session 模型预留可对接的接口边界
+- PTY 进程管理应基于 v0.1 建立的 Session Foundation 构建，扩展 Session 的进程树追踪和异常处理能力
+
+> **第一/二阶段边界说明：** v0.4 关注 AI CLI 作为终端进程的稳定性——PTY 管线可靠、信号正确、长时间运行不崩溃。AI CLI 的任务语义识别（如阶段性结果判断、任务推进状态、会话高层状态识别）属于第二大阶段 Session Host 和 Interaction Layer 的职责，不在 v0.4 验收范围内。
 
 **时间盒策略：** 本版本设定最长 N 周时间盒。超时未达标的性能指标降级为已知问题，在 v0.6 体验打磨阶段回收处理，不阻塞后续版本推进。
 
@@ -340,37 +354,36 @@ graph LR
 
 **过程性要求（dogfooding gate，不作为版本验收硬性标准）：** 团队成员日常使用一周，记录需切回 iTerm/Terminal 的场景并评估严重性。
 
-#### v0.7 — Session Host 基础与阶段收官
+#### v0.7 — Session Host 完善与阶段收官
 
-**版本定位：** 为第二大阶段铺路。搭建 [Session Host](../SSOT/glossary.md#session-host) 基础框架，建立进程管理和状态维护的核心抽象。此时团队已有 v0.1–v0.6 的完整实现经验，能够基于真实终端行为设计 Session 模型。同时完成第一大阶段的收尾工作：全量回归、稳定性强化。本版本完成后，第一大阶段全部完成。
+**版本定位：** 第一大阶段收官版本。在 v0.1 建立的 Session Foundation 和 v0.2–v0.6 逐步扩展的 Session 能力基础上，完善 Session Host 框架，补齐持久化、完整状态模型和 Phase 2 接口预留。同时完成全量回归和稳定性强化。本版本完成后，第一大阶段全部完成。
 
-**架构层重点：** [Session Host](../SSOT/glossary.md#session-host)（基础框架、进程管理、状态维护）+ [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（稳定性收尾）
+> **与 Session Foundation 的关系：** Session 基础模型（SessionID、Session-PTY 映射、基础状态）在 v0.1 建立，v0.2–v0.4 逐步扩展（Tab/Session 映射、进程树追踪、长会话管理）。v0.7 的职责是在已有实现经验基础上完善 Session Host 框架，而非首次建立。
+
+**架构层重点：** [Session Host](../SSOT/glossary.md#session-host)（完善框架、持久化、Phase 2 接口预留）+ [Terminal Runtime](../SSOT/glossary.md#terminal-runtime)（稳定性收尾）
 
 **具体交付物：**
 
-- Session 抽象模型：定义 Session 数据结构（ID、关联 PTY、启动命令、创建时间、基础状态）
-- 进程管理框架：Session 与其下进程树的关联追踪、进程退出检测、异常处理
-- 基础状态维护：每个 Session 维护"运行中/已退出"等基础状态，为第二大阶段完整 7 状态模型（参见[术语表 — 会话状态](../SSOT/glossary.md#会话状态session-state)）预留扩展点
-- Session 持久化基础：Session 元数据的本地存储
-- 内部 Session 管理接口：定义内部 API（create、destroy、list、getState），不对外暴露，为第二大阶段的 [Interaction Layer](../SSOT/glossary.md#interaction-layer) 提供底层支撑
+- Session 完整状态模型：将基础状态（running/exited）扩展为完整 7 状态模型（参见[术语表 — 会话状态](../SSOT/glossary.md#会话状态session-state)），为第二大阶段预留
+- Session 持久化基础：Session 元数据的本地存储，应用重启后可恢复
+- 内部 Session 管理接口完善：完善内部 API（create、destroy、list、getState），调用约定与未来外部 API 保持一致，为第二大阶段的 [Interaction Layer](../SSOT/glossary.md#interaction-layer) 提供底层支撑
+- Session 的创建、销毁事件日志：结构化记录，支持问题定位
 - 全量回归测试：v0.1–v0.6 所有功能回归 + 性能回归
 - 稳定性强化：崩溃上报、日志体系完善
 
 **架构约束：**
 
-- Session 模型必须采用 protocol/trait 模式设计，为第二大阶段 Interaction Layer 的 `start_session`/`attach_session` 等外部接口预留扩展点
 - 内部 Session API 的调用约定应与未来外部 API 保持一致（相同的参数语义和错误模型），降低第二大阶段的适配成本
+- Session 完整状态模型扩展不得破坏 v0.1–v0.6 已有的 Session 使用方式（向后兼容）
 
 **验收标准：**
 
-- [ ] 代码中存在明确的 Session 模型定义，包含 ID、关联 PTY、状态等字段
-- [ ] 每个 tab/面板对应一个 Session 实例，Session 可被唯一标识
-- [ ] 通过内部 API 可列出所有活跃 Session 及其基础状态
-- [ ] Session 的创建、销毁事件被正确记录（日志可查）
+- [ ] Session 状态模型已从基础 running/exited 扩展为完整 7 状态模型，状态转换有测试覆盖
 - [ ] Session 元数据可被持久化到本地存储，应用重启后可读取上次的 Session 记录
-- [ ] 内部 Session API 采用 protocol/trait 模式，添加 `start_session`、`attach_session` 等方法只需在现有协议上实现新方法，无需重构 Session 内部结构（代码审查确认）
+- [ ] Session 的创建、销毁事件被结构化记录（日志可查）
+- [ ] 内部 Session API 添加 `start_session`、`attach_session` 等方法只需在现有协议上实现新方法，无需重构 Session 内部结构（代码审查确认）
 - [ ] v0.1–v0.6 全部验收标准回归通过
-- [ ] 连续 7 天日常使用无 crash（团队内部 dogfooding）
+- [ ] 连续 7 天按固定 dogfooding 任务清单使用无 crash（任务清单覆盖：多 tab 操作、分屏、vim/top 长时间运行、AI CLI 多轮交互、大量输出场景）
 
 ### 2.3 关键挑战
 
@@ -391,8 +404,8 @@ graph LR
 
 ### 2.4 阶段完成标志
 
-- 用户可以将 Hi-Terms 作为日常终端替代 macOS Terminal 或 iTerm，无明显功能缺失
-- AI CLI 长时间运行稳定，多轮交互和用户澄清衔接自然
+- 用户可以将 Hi-Terms 作为日常终端替代 macOS Terminal 或 iTerm——以 macOS Terminal 核心功能对照表为基准，覆盖率 ≥ 95%
+- AI CLI 长时间运行稳定，交互式终端行为（多轮 I/O、信号传递、等待输入检测）可靠
 - Session Host 基础框架已搭建，接口设计可向第二大阶段扩展
 
 ## 3. 第二大阶段：命令行工具会话宿主层

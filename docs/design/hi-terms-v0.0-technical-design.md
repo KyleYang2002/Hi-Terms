@@ -85,6 +85,8 @@ HiTerms/
 | Configuration | 无（Foundation only） | 不依赖其他业务模块 |
 | HiTermsApp | 全部模块 | — |
 
+> **架构层职责分界：** Terminal Runtime（TerminalCore + PTYKit + TerminalRenderer + TerminalUI）负责 PTY 管理、I/O 数据流、终端解析与渲染。Session Host 负责会话身份（SessionID）、生命周期、状态维护、注册表与事件。TerminalUI 中的 `TerminalSession` 是 Terminal Runtime 层的数据管线协调器（串联 PTY → Parser → ScreenBuffer → Renderer），**不是** Session Host 层的会话抽象——两者命名相似但职责不同（详见 §2.3 TerminalUI 澄清）。
+
 ### 2.3 模块详细说明
 
 #### TerminalCore

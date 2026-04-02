@@ -10,6 +10,8 @@
 - [技术选型决策](../decisions/hi-terms-technical-decisions.md)
 - [V0.0 技术设计](../design/hi-terms-v0.0-technical-design.md)（工程基线技术设计）
 - [V0.0 验收标准](hi-terms-v0.0-acceptance.md)（V0.0 验收标准权威来源）
+- [V0.1 技术设计](../design/hi-terms-v0.1-technical-design.md)（终端内核技术设计）
+- [V0.1 验收标准](hi-terms-v0.1-acceptance.md)（V0.1 验收标准权威来源）
 - [术语表](../SSOT/glossary.md)（术语权威定义）
 
 > [两大阶段](../SSOT/glossary.md#两大阶段two-phase-model)的定义与递进关系，参见[愿景文档 §1](hi-terms-vision.md#1-产品愿景)。
@@ -149,20 +151,7 @@ graph LR
 - Session 模型必须采用 protocol 模式设计，为后续版本渐进扩展 Session 能力和第二大阶段 Interaction Layer 预留扩展点
 - PTY 实例必须通过 Session 持有和管理（而非直接由视图层持有），确保 Session 作为 PTY 生命周期的唯一管理者
 
-**验收标准：**
-
-- [ ] 启动后自动进入用户默认 shell，显示正常提示符
-- [ ] 可执行 `ls`、`cd`、`echo`、`cat` 等基础命令并看到正确输出
-- [ ] 可运行 `top`，界面刷新正常，鼠标点击可交互，退出后终端状态恢复
-- [ ] 可运行 `vim`，能进入编辑、输入、保存退出，鼠标选择文本正常，终端状态正确恢复
-- [ ] Ctrl+C 能中断正在运行的前台进程
-- [ ] 输出超出屏幕时可滚动查看历史内容
-- [ ] 基础 ANSI 颜色（前景/背景 8 色）正确渲染
-- [ ] 连续执行 50 条命令后不崩溃，Instruments Leaks 检测无泄漏
-- [ ] vttest 基础测试项通过率 ≥ 80%
-- [ ] 每个终端窗口对应一个 Session 实例，Session 具有唯一 ID
-- [ ] Session 正确持有并管理其关联的 PTY 实例
-- [ ] 通过内部 registry 可查询当前所有活跃 Session 及其基础状态（running/exited）
+**验收标准：** 参见 [V0.1 验收标准](hi-terms-v0.1-acceptance.md)（权威来源，含 12 个验收项的详细验证步骤、依赖关系图和失败处理策略）。
 
 #### v0.2 — 日常可用终端
 

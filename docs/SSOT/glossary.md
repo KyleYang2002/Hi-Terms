@@ -216,6 +216,14 @@ graph TB
 
 **关联术语:** [会话化承载](#会话化承载session-oriented-hosting)、[会话生命周期](#会话生命周期session-lifecycle)
 
+#### Session Foundation
+
+**定义:** Session Host 层在 v0.1 的最小基础子集。包含 SessionID（UUID）、Session 协议、TerminalSession 实现、SessionRegistry，提供 2 个状态（running / exited）和基础生命周期管理。为后续版本的 Tab-Session 映射（v0.2）、Session 持久化（v0.7）和完整 Session Host（第二大阶段）奠定基础。
+
+**前移背景:** 迭代评审（2026-03-30，P0-2）识别了 Session Host 基础抽象放在 v0.7 与 v0.4 AI CLI 稳定承载目标之间的依赖倒置问题，因此将 Session Foundation 前移到 v0.1。
+
+**关联术语:** [Session Host](#session-host)、[会话](#会话session)
+
 ### Interaction Layer
 
 **定义:** [四层架构](#四层架构four-layer-architecture)中负责外部应用与[会话](#会话session)交互接口的层。提供两条路径：[高层交互](#高层交互high-level-interaction)为主路径，[底层终端注入](#底层终端注入raw-terminal-injection)为兜底路径。

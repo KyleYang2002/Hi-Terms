@@ -346,6 +346,34 @@ source.setEventHandler { [weak self] in
 }
 ```
 
+### 4.7 Session 错误处理
+
+V0.1 需处理以下关键错误场景：
+
+| 错误场景 | 触发条件 | 处理方式 |
+|---------|---------|---------|
+| PTY 创建失败 | `forkpty()` 返回 -1（fd 耗尽等） | `session.start()` 抛出 `SessionError.ptyCreationFailed`，调用方（AppDelegate）捕获后在窗口显示错误提示 |
+| Shell 路径无效 | `$SHELL` 指向不存在的路径 | `exec` 失败后子进程立即退出 → `exitHandler` 收到退出码 127 → 状态转为 `.exited(code: 127)` → UI 显示"Shell 启动失败" |
+| PTY read 错误 | `read()` 返回 -1 且 `errno != EAGAIN` | 记录 OSLog 错误日志 → 触发 `exitHandler(-1)` → 状态转为 `.exited(code: -1)` |
+
+```swift
+public enum SessionError: Error {
+    case ptyCreationFailed(errno: Int32)
+    case shellNotFound(path: String)
+}
+
+// session.start() 签名变更为 throws
+public func start() throws {
+    // forkpty 失败时抛出错误
+    guard ptyProcess.spawn() else {
+        throw SessionError.ptyCreationFailed(errno: errno)
+    }
+    state = .running
+}
+```
+
+> **设计决策：** V0.1 对错误路径采用"快速失败 + 日志 + 状态转换"策略，不做重试。窗口在收到 `.exited` 状态后关闭（§9.3），用户可重新启动应用。V0.2 可增加错误提示 UI 和重试逻辑。
+
 ---
 
 ## 5. CoreTextRenderer 实现方案
@@ -979,6 +1007,8 @@ TerminalView 启动 RenderCoordinator.startDisplayLink()
 
 ### 9.2 TerminalWindowController
 
+**窗口尺寸计算：** V0.1 采用"配置驱动窗口尺寸"策略——窗口大小由 `cols × cellWidth` 和 `rows × cellHeight` 决定，而非硬编码像素值。这确保终端网格与窗口像素精确对齐，消除右侧/底部的空白像素条。
+
 ```swift
 /// V0.1 窗口控制器：管理单个终端窗口
 public final class TerminalWindowController: NSWindowController {
@@ -988,8 +1018,13 @@ public final class TerminalWindowController: NSWindowController {
     public init(session: TerminalSession) {
         self.session = session
 
-        // 创建窗口
-        let contentRect = NSRect(x: 0, y: 0, width: 800, height: 600)
+        // 根据配置和字体计算窗口大小
+        let fontMetrics = FontMetrics(font: NSFont(name: session.config.fontName,
+                                                    size: CGFloat(session.config.fontSize))
+                                       ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular))
+        let contentWidth = CGFloat(session.config.terminalCols) * fontMetrics.cellWidth
+        let contentHeight = CGFloat(session.config.terminalRows) * fontMetrics.cellHeight
+        let contentRect = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
         let window = NSWindow(
             contentRect: contentRect,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -1241,7 +1276,8 @@ V0.1 要求 vttest 基础测试项通过率 ≥ 80%。验证方式：
 | 3 | `PTYProcess` 新增 `exitHandler` 属性 | PTYProcess.swift 内部 | 添加属性 → 修改 `setupReading()` 的 EOF 分支 → 添加 `waitpid` + 退出码采集 |
 | 4 | `SwiftTermDelegateAdapter.send()` 从空操作改为回调实现 | SwiftTermAdapter.swift | 添加 `onSendData` 闭包 → 修改 `send()` 方法 → 在 init 中连接 |
 | 5 | `SwiftTermAdapter.createSnapshot()` 签名变更（增加 scrollback 参数） | SwiftTermAdapter.swift + 所有调用处 | 添加默认参数 `scrollbackOffset: Int = 0` → 现有调用无需修改（默认值兼容） |
+| 6 | `SwiftTermDelegateAdapter.onBufferUpdated` 改为 `onRangeChanged(startY: Int, endY: Int)` | SwiftTermAdapter.swift + DefaultTerminalPipeline | 修改闭包签名 → 在 `rangeChanged(source:startY:endY:)` 中传递行范围 → Pipeline 中调用 `dirtyRegion.merge(rows: startY...endY)` |
 
-**执行顺序建议：** 3 → 4 → 5 → 2 → 1（先做不破坏编译的内部变更，最后做协议迁移）
+**执行顺序建议：** 3 → 4 → 5 → 6 → 2 → 1（先做不破坏编译的内部变更，最后做协议迁移）
 
-> **注意：** 变更 5 使用默认参数值，不会破坏现有调用。变更 1 和 2 是真正的破坏性变更，需要同步更新所有引用处。建议在单次 commit 中完成每个变更及其所有影响文件的修改。
+> **注意：** 变更 5 使用默认参数值，不会破坏现有调用。变更 6 将无参闭包改为带参闭包，需同步更新所有 `onBufferUpdated` 的赋值处。变更 1 和 2 是真正的破坏性变更，需要同步更新所有引用处。建议在单次 commit 中完成每个变更及其所有影响文件的修改。

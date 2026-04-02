@@ -4,8 +4,8 @@ import Foundation
 /// V0.1 will add full session lifecycle management.
 public typealias SessionID = UUID
 
-/// Basic session state. V0.1 will expand to the full 7-state model
-/// (started, running, awaitingInput, interrupted, completed, failed, stopped).
+/// Basic session state.
+/// V0.1 expands to running/exited(code:). Full 7-state model in V0.7.
 public enum SessionState: Sendable {
     case running
     case exited

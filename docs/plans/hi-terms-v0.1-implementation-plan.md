@@ -91,7 +91,24 @@ Phase F: 集成验收（B01-B12 全部通过）
 
 **验证：** `make test` 全部通过 + scrollback 测试通过
 
-### A4: SessionState.exited 破坏性变更
+### A4: SwiftTermDelegateAdapter.onBufferUpdated 改为 onRangeChanged
+
+**文件：** `Packages/TerminalCore/Sources/TerminalCore/SwiftTermAdapter.swift`
+**设计参考：** 技术设计 §3.1, §16 变更 #6
+
+**任务：**
+1. 将 `SwiftTermDelegateAdapter.onBufferUpdated: (() -> Void)?` 改为 `onRangeChanged: ((Int, Int) -> Void)?`
+2. 修改 `rangeChanged(source:startY:endY:)` 方法：`onRangeChanged?(startY, endY)`
+3. SwiftTermAdapter 新增 `public var rangeChangedHandler: ((Int, Int) -> Void)?`
+4. 在 SwiftTermAdapter.init 中连接：`delegateAdapter.onRangeChanged = { [weak self] startY, endY in self?.rangeChangedHandler?(startY, endY) }`
+5. 更新现有 `onBufferUpdated` 的所有赋值处（如有）
+6. 新增单元测试：向 adapter 灌入修改特定行的序列，验证 rangeChangedHandler 传递正确行范围
+
+> **重要性：** 这是增量渲染的关键环节。不传递行范围，DirtyRegion 无法精确标记脏行，退化为全屏重绘，违反架构约束。
+
+**验证：** `make test` 全部通过 + rangeChanged 行范围测试通过
+
+### A5: SessionState.exited 破坏性变更
 
 **文件：** `Packages/TerminalCore/Sources/TerminalCore/SessionTypes.swift` + 所有引用处
 **设计参考：** 技术设计 §4.2
@@ -103,7 +120,7 @@ Phase F: 集成验收（B01-B12 全部通过）
 
 **验证：** `make test` 全部通过（编译 + 运行）
 
-### A5: TerminalPipeline 协议迁移至 TerminalCore
+### A6: TerminalPipeline 协议迁移至 TerminalCore
 
 **文件：**
 - 源：`Packages/TerminalUI/Sources/TerminalUI/TerminalPipeline.swift`
@@ -122,7 +139,7 @@ Phase F: 集成验收（B01-B12 全部通过）
 ### Phase A 里程碑
 
 - [ ] 现有 40+ 测试全部通过
-- [ ] 新增 exitHandler、send()、scrollback 测试通过
+- [ ] 新增 exitHandler、send()、scrollback、rangeChanged 测试通过
 - [ ] `make build` Debug + Release 均成功
 - [ ] Git commit: "V0.1 Phase A: 修复接口不匹配，为 V0.1 实现做准备"
 
@@ -421,8 +438,9 @@ make test  # 包含 SessionTests, SessionRegistryTests
 A1 (exitHandler) ──────────────────────────────┐
 A2 (send callback) ────────────────────────────┤
 A3 (scrollback) ───────────────────────────────┤
-A4 (SessionState) ─────────────────────────────┤
-A5 (Protocol migration) ───────────────────────┤
+A4 (rangeChanged) ─────────────────────────────┤
+A5 (SessionState) ─────────────────────────────┤
+A6 (Protocol migration) ───────────────────────┤
                                                 ↓
                                      Phase A 里程碑验证
                                                 ↓
@@ -454,7 +472,7 @@ F1-F6 (B01-B12 验收) ───────────────────
 ```
 
 **Phase 内部并行度：**
-- Phase A: A1-A3 可并行，A4 需在 A1 之后（exitHandler 用到 exitCode），A5 最后执行
+- Phase A: A1-A4 可并行，A5 需在 A1 之后（exitHandler 用到 exitCode），A6 最后执行
 - Phase B: B1 和 B2 可并行
 - Phase C: C1 先，C2 后
 - Phase D: D1 先，D2/D3 可并行，D4 最后

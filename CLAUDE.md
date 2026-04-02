@@ -19,6 +19,9 @@ The primary documentation language is Chinese (中文).
 - `docs/decisions/hi-terms-technical-decisions.md` — technical decisions (Swift+AppKit, SwiftTerm, CoreText, distribution, testing, macOS 14)
 - `docs/reqs/hi-terms-v0.0-acceptance.md` — v0.0 acceptance criteria (SSOT for v0.0 verification)
 - `docs/design/hi-terms-v0.0-technical-design.md` — v0.0 engineering baseline: module structure, data flow, SwiftTerm evaluation plan, threading model
+- `docs/reqs/hi-terms-v0.1-acceptance.md` — v0.1 acceptance criteria (SSOT for v0.1 verification, 12 items B01-B12)
+- `docs/design/hi-terms-v0.1-technical-design.md` — v0.1 terminal kernel: session foundation, rendering pipeline, input handling, threading model
+- `docs/plans/hi-terms-v0.1-implementation-plan.md` — v0.1 implementation plan (6 phases A-F, task breakdown)
 
 ## Architecture (Four-Layer Design)
 
@@ -42,7 +45,7 @@ The primary documentation language is Chinese (中文).
 
 ## Current State
 
-V0.0 engineering baseline implemented. The repo now has:
+V0.0 engineering baseline complete. V0.1 (terminal kernel) in development. The repo now has:
 - Xcode project (via XcodeGen `project.yml`) with HiTerms app target and 6 test targets
 - 5 SPM packages: TerminalCore, PTYKit, TerminalRenderer, TerminalUI, Configuration
 - SwiftTerm v1.13.0 adopted (Strategy B — SwiftTerm owns state, Hi-Terms reads cells)
@@ -52,8 +55,10 @@ V0.0 engineering baseline implemented. The repo now has:
 - 40 tests passing across all modules
 - DMG packaging script, vttest automation framework, performance baseline tooling
 - `Tools/verify-acceptance.sh` for automated A01-A11 verification
+- V0.1 technical design (16 sections, session foundation + rendering pipeline + input + threading)
+- V0.1 acceptance criteria (12 items B01-B12) and implementation plan (6 phases A-F)
 
-Next step: implement v0.1 (terminal kernel — full PTY+shell+rendering).
+Current step: implement v0.1 terminal kernel per implementation plan (Phase A: base fixes → Phase F: acceptance).
 
 ## Development Workflow
 

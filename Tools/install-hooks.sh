@@ -8,4 +8,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cp "$SCRIPT_DIR/pre-commit" "$PROJECT_ROOT/.git/hooks/pre-commit"
 chmod +x "$PROJECT_ROOT/.git/hooks/pre-commit"
-echo "Git hooks 安装完成"
+
+cp "$SCRIPT_DIR/pre-push" "$PROJECT_ROOT/.git/hooks/pre-push"
+chmod +x "$PROJECT_ROOT/.git/hooks/pre-push"
+
+echo "Git hooks 安装完成（pre-commit + pre-push）"

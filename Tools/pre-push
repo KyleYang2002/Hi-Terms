@@ -1,0 +1,27 @@
+#!/bin/bash
+# Git pre-push hook
+# 在 push 前运行 lint + test，任一失败则阻止 push
+# 安装: ./Tools/install-hooks.sh
+set -euo pipefail
+
+echo "=== pre-push: 开始检查 ==="
+
+# SwiftLint 检查
+echo "--- 运行 SwiftLint 检查 ---"
+if ! make lint; then
+    echo ""
+    echo "错误: SwiftLint 检查未通过，push 已阻止"
+    echo "提示: 修复后重新 push，或使用 git push --no-verify 跳过检查"
+    exit 1
+fi
+
+# 运行测试
+echo "--- 运行测试 ---"
+if ! make test; then
+    echo ""
+    echo "错误: 测试未通过，push 已阻止"
+    echo "提示: 修复后重新 push，或使用 git push --no-verify 跳过检查"
+    exit 1
+fi
+
+echo "=== pre-push: 全部检查通过 ==="

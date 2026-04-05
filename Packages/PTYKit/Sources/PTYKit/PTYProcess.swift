@@ -14,13 +14,6 @@ public final class PTYProcess {
     private var dataHandler: ((Data) -> Void)?
     private var asyncContinuation: AsyncStream<Data>.Continuation?
 
-    public var isRunning: Bool {
-        guard pid > 0 else { return false }
-        var status: Int32 = 0
-        let result = waitpid(pid, &status, WNOHANG)
-        return result == 0
-    }
-
     public init(configuration: PTYConfiguration) throws {
         self.queue = DispatchQueue(label: "com.hiterms.pty.\(UUID().uuidString)")
 
@@ -76,10 +69,18 @@ public final class PTYProcess {
                 let data = Data(buffer[0..<bytesRead])
                 self.dataHandler?(data)
                 self.asyncContinuation?.yield(data)
-            } else if bytesRead <= 0 {
+            } else if bytesRead == 0 {
+                // True EOF — shell exited
                 self.asyncContinuation?.finish()
                 source.cancel()
-                PTYLog.lifecycle.info("PTY read ended: pid=\(self.pid)")
+                PTYLog.lifecycle.info("PTY read EOF: pid=\(self.pid)")
+            } else {
+                // bytesRead == -1 — read error
+                let err = errno
+                if err == EINTR || err == EAGAIN { return }
+                PTYLog.io.error("PTY read error: pid=\(self.pid), errno=\(err)")
+                self.asyncContinuation?.finish()
+                source.cancel()
             }
         }
         source.setCancelHandler { [weak self] in
@@ -107,10 +108,23 @@ public final class PTYProcess {
     }
 
     /// Writes data to the PTY master fd.
+    /// Handles partial writes and EINTR retries.
     public func write(data: Data) {
         data.withUnsafeBytes { buffer in
             guard let ptr = buffer.baseAddress else { return }
-            Darwin.write(masterFD, ptr, buffer.count)
+            var remaining = buffer.count
+            var offset = 0
+            while remaining > 0 {
+                let written = Darwin.write(masterFD, ptr + offset, remaining)
+                if written < 0 {
+                    let err = errno
+                    if err == EINTR { continue }
+                    PTYLog.io.error("PTY write failed: pid=\(self.pid), errno=\(err)")
+                    return
+                }
+                offset += written
+                remaining -= written
+            }
         }
     }
 
@@ -121,9 +135,19 @@ public final class PTYProcess {
         kill(pid, SIGWINCH)
     }
 
-    /// Terminates the PTY process.
+    /// Terminates the PTY process and reaps the child to avoid zombies.
     public func terminate() {
+        guard pid > 0 else { return }
         kill(pid, SIGHUP)
+        var status: Int32 = 0
+        // Give child 100ms to exit gracefully
+        usleep(100_000)
+        let result = waitpid(pid, &status, WNOHANG)
+        if result == 0 {
+            // Still running — force kill
+            kill(pid, SIGKILL)
+            waitpid(pid, &status, 0)
+        }
         dispatchSource?.cancel()
         PTYLog.lifecycle.info("PTY terminated: pid=\(self.pid)")
     }

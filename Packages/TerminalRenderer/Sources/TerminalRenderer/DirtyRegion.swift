@@ -5,23 +5,23 @@ import os
 ///
 /// Collects row indices that need redrawing. Parser thread calls `merge()`,
 /// renderer thread calls `swapAndClear()` on the CADisplayLink callback.
-/// Protected by `os_unfair_lock` for minimal overhead.
+/// Protected by `OSAllocatedUnfairLock` for minimal overhead.
 public final class DirtyRegion: @unchecked Sendable {
-    private var lock = os_unfair_lock()
+    private let lock = OSAllocatedUnfairLock()
     private var dirtyRows = IndexSet()
 
     public init() {}
 
     public var isEmpty: Bool {
-        os_unfair_lock_lock(&lock)
-        defer { os_unfair_lock_unlock(&lock) }
+        lock.lock()
+        defer { lock.unlock() }
         return dirtyRows.isEmpty
     }
 
     /// Merges additional dirty rows. Called from the PTY I/O thread.
     public func merge(_ rows: IndexSet) {
-        os_unfair_lock_lock(&lock)
-        defer { os_unfair_lock_unlock(&lock) }
+        lock.lock()
+        defer { lock.unlock() }
         dirtyRows.formUnion(rows)
     }
 
@@ -38,8 +38,8 @@ public final class DirtyRegion: @unchecked Sendable {
     /// Atomically swaps out the dirty region and clears it.
     /// Called from the main thread (CADisplayLink callback).
     public func swapAndClear() -> IndexSet {
-        os_unfair_lock_lock(&lock)
-        defer { os_unfair_lock_unlock(&lock) }
+        lock.lock()
+        defer { lock.unlock() }
         let result = dirtyRows
         dirtyRows = IndexSet()
         return result

@@ -24,16 +24,17 @@ public final class SwiftTermAdapter: TerminalParser {
         delegateAdapter.onSendData = { [weak self] data in
             self?.sendHandler?(data)
         }
-        delegateAdapter.onRangeChanged = { [weak self] startY, endY in
-            guard let self = self else { return }
-            self.delegate?.parser(self, didReceiveAction: .bufferUpdated)
-            self.rangeChangedHandler?(startY, endY)
-        }
     }
 
     public func parse(data: Data) {
         let bytes = [UInt8](data)
         terminal.feed(byteArray: bytes)
+
+        if let range = terminal.getUpdateRange() {
+            terminal.clearUpdateRange()
+            delegate?.parser(self, didReceiveAction: .bufferUpdated)
+            rangeChangedHandler?(range.startY, range.endY)
+        }
     }
 
     /// Reads a cell from SwiftTerm's buffer, bridging to Hi-Terms Cell type.
@@ -143,14 +144,9 @@ public final class SwiftTermAdapter: TerminalParser {
 /// Internal delegate adapter for SwiftTerm callbacks.
 private class SwiftTermDelegateAdapter: TerminalDelegate {
     var onSendData: ((Data) -> Void)?
-    var onRangeChanged: ((Int, Int) -> Void)?
 
     func send(source: Terminal, data: ArraySlice<UInt8>) {
         onSendData?(Data(data))
-    }
-
-    func rangeChanged(source: Terminal, startY: Int, endY: Int) {
-        onRangeChanged?(startY, endY)
     }
 
     func sizeChanged(source: Terminal) {}

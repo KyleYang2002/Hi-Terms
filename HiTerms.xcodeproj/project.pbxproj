@@ -34,6 +34,7 @@
 		FAD32E2F87D444E277A916FD /* PTYKit in Frameworks */ = {isa = PBXBuildFile; productRef = 126DBAB017A8B12C211AAD1B /* PTYKit */; };
 		FBBB1F8C20E080B328DCFFFB /* Logging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF75C88D874A8718737FD87 /* Logging.swift */; };
 		FEF0211285979C0019FF6DCF /* TerminalRenderer in Frameworks */ = {isa = PBXBuildFile; productRef = 3F8AA1C4B389BF3583D79013 /* TerminalRenderer */; };
+		FF413DF9331D2DD92ED3C6B5 /* SwiftTermAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DE7780ED200E823155765FB /* SwiftTermAdapterTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +54,7 @@
 		19D351C12A79A81934B331EF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2AAA0646281DACF3EB30FF48 /* TerminalPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalPipelineTests.swift; sourceTree = "<group>"; };
 		2BF8F8ED4441F4A074C3ECFF /* DefaultConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultConfigTests.swift; sourceTree = "<group>"; };
+		2DE7780ED200E823155765FB /* SwiftTermAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTermAdapterTests.swift; sourceTree = "<group>"; };
 		35F53F6BDF1E46E82294B940 /* SwiftTermSpikeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTermSpikeTests.swift; sourceTree = "<group>"; };
 		362C48BF4DB66C909BAC47EC /* PTYProcessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PTYProcessTests.swift; sourceTree = "<group>"; };
 		375B6A495018E75A911A2274 /* FontMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FontMetricsTests.swift; sourceTree = "<group>"; };
@@ -224,6 +226,7 @@
 			children = (
 				67E8ED22E4414992AAA801AD /* CellTests.swift */,
 				17478702FCFDD47EB71C6438 /* ScreenBufferTests.swift */,
+				2DE7780ED200E823155765FB /* SwiftTermAdapterTests.swift */,
 			);
 			name = TerminalCoreTests;
 			path = Packages/TerminalCore/Tests/TerminalCoreTests;
@@ -461,6 +464,7 @@
 			files = (
 				58FBB9533A9C168E99168C71 /* CellTests.swift in Sources */,
 				D19826E7829FA0C4E929BB50 /* ScreenBufferTests.swift in Sources */,
+				FF413DF9331D2DD92ED3C6B5 /* SwiftTermAdapterTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

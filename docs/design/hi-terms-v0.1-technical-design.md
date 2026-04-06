@@ -374,6 +374,97 @@ public func start() throws {
 
 > **设计决策：** V0.1 对错误路径采用"快速失败 + 日志 + 状态转换"策略，不做重试。窗口在收到 `.exited` 状态后关闭（§9.3），用户可重新启动应用。V0.2 可增加错误提示 UI 和重试逻辑。
 
+### 4.8 子进程环境变量策略
+
+终端模拟器启动的 shell 子进程需要正确的环境变量才能使 shell 和 CLI 工具（`ls --color`、`vim`、`top`、`vttest` 等）正常工作。V0.1 采用**继承 + 强制设置 + 用户覆盖**三层环境构建模型。
+
+#### 4.8.1 环境构建模型
+
+子进程环境 = 父进程环境（`execvp` 默认继承） + 必需变量（强制/补充设置） + 用户自定义变量（`PTYConfiguration.environment` 覆盖）
+
+执行顺序：
+1. `forkpty()` 创建子进程 — 自动继承父进程完整环境
+2. 强制设置 `TERM`（始终覆盖，父进程值不适用于终端模拟器）
+3. 补充设置 `LANG`（仅在未设置时补充，不覆盖已有值）
+4. 设置用户自定义环境变量（覆盖已有值）
+5. `execvp()` 启动 shell
+
+#### 4.8.2 必需环境变量
+
+| 变量 | 设置逻辑 | 默认值 | 说明 |
+|------|---------|--------|------|
+| `TERM` | **始终强制设置**（`setenv` overwrite=1） | `config.terminalType`（默认 `"xterm-256color"`） | 终端能力标识，应用通过 terminfo 数据库查询。父进程的 TERM（Xcode 的 `dumb` 或 launchd 的空值）不适用于 Hi-Terms 终端模拟 |
+| `LANG` | 仅补充（`setenv` overwrite=0） | `"en_US.UTF-8"` | 字符编码，影响 Unicode 显示。如父进程已设置（如 `zh_CN.UTF-8`）则保留用户偏好 |
+| `SHELL` | 继承父进程，不做修改 | — | login shell（`-l`）启动脚本会处理 |
+| `HOME` | 继承父进程，不做修改 | — | shell 启动脚本（`.zshrc` 等）依赖此变量 |
+| `USER` | 继承父进程，不做修改 | — | 提示符和权限相关 |
+| `PATH` | 继承父进程，不做修改 | — | login shell 的 `/etc/profile` 和 `~/.zprofile` 会扩展 PATH |
+
+**TERM 值选择 `xterm-256color` 的理由：**
+
+- macOS 系统 terminfo 数据库预装 `xterm-256color` 条目，无需额外安装
+- macOS Terminal.app 默认使用 `xterm-256color`，兼容性最佳
+- V0.1 虽只实现 ANSI 8 色渲染，但 TERM 应反映终端**能力上限**而非当前实现范围
+- V0.2 扩展 256 色 / True Color 时无需更改 TERM 值，避免行为突变
+- `xterm` 或 `vt100` 会导致部分应用不输出颜色序列，降低用户体验
+
+#### 4.8.3 启动场景差异分析
+
+| 启动方式 | 父进程环境特征 | Hi-Terms 处理 |
+|---------|-------------|--------------|
+| Xcode Run | 完整用户环境，TERM 通常为 `dumb` 或缺失 | 强制 TERM=xterm-256color 覆盖 |
+| Finder 双击 | launchd 最小环境，HOME/USER/PATH 存在但精简，TERM/LANG 缺失 | 强制 TERM + 补充 LANG |
+| 命令行 `open HiTerms.app` | 完整 shell 环境，TERM 为当前终端值（可能是 xterm-256color） | 强制 TERM 覆盖为 Hi-Terms 自身的终端类型 |
+
+> **设计决策：** `TERM` 始终强制覆盖（overwrite=1），因为 Hi-Terms 作为终端模拟器，其 TERM 值应反映自身能力，而非继承父进程（可能是 IDE、Finder 或另一个终端）的 TERM 值。
+
+#### 4.8.4 实现代码规格
+
+`PTYProcess.swift` 子进程（`fd == 0` 分支）中，在现有 `setenv` 循环之前添加：
+
+```swift
+if fd == 0 {
+    // Child process
+    if let workDir = configuration.workingDirectory {
+        chdir(workDir)
+    }
+
+    // 1. 强制设置 TERM（终端模拟器必须声明自身终端类型）
+    setenv("TERM", configuration.terminalType, 1)
+    // 2. 补充 LANG（不覆盖用户已有的语言偏好）
+    setenv("LANG", "en_US.UTF-8", 0)
+
+    // 3. 用户自定义环境变量（覆盖已有值）
+    for (key, value) in configuration.environment {
+        setenv(key, value, 1)
+    }
+
+    // Build C args array
+    let allArgs = [configuration.shellPath] + configuration.arguments
+    let cArgs = allArgs.map { strdup($0) } + [nil]
+    defer { cArgs.forEach { free($0) } }
+
+    execvp(configuration.shellPath, cArgs)
+    _exit(1)
+}
+```
+
+`PTYConfiguration` 新增属性：
+
+```swift
+public var terminalType: String  // 默认 "xterm-256color"
+```
+
+`AppConfig` 协议新增：
+
+```swift
+var terminalType: String { get }  // 默认 "xterm-256color"
+```
+
+#### 4.8.5 Login Shell 行为说明
+
+`PTYConfiguration.arguments` 默认值为 `["-l"]`（login shell）。Login shell 会读取 `/etc/profile`、`~/.zprofile`、`~/.zshrc` 等启动脚本，这些脚本可能修改 `PATH` 和设置其他环境变量。`TERM` 必须在 `execvp` 之前设置（即在上述 `setenv` 阶段），以确保 shell 启动脚本可以检测终端类型并据此调整行为（如条件性加载颜色别名）。
+
 ---
 
 ## 5. CoreTextRenderer 实现方案
@@ -864,6 +955,115 @@ public func createSnapshot(scrollbackOffset: Int = 0) -> ScreenBufferSnapshot {
 
 > **注意：** 需验证 SwiftTerm v1.13.0 是否暴露 `getScrollInvariantLine(row:)` API。如未暴露，替代方案是直接访问 `terminal.buffer.lines` 的底层 CircularList，或通过 `terminal.getLine(row:)` 加行号偏移计算。实现时以 SwiftTerm API 实际可用性为准。
 
+> **API 验证结果：** [待 PF-3 前置验证完成后填入实际验证结果和最终采用方案]
+
+#### 备选方案 A: buffer.lines 直接访问
+
+如 `getScrollInvariantLine` 不可用，可通过 `terminal.buffer` 的 `lines`（CircularList）和 `yBase` 属性直接访问 scrollback 数据：
+
+```swift
+// 备选方案 A: buffer.lines 直接访问
+public func createSnapshot(scrollbackOffset: Int = 0) -> ScreenBufferSnapshot {
+    let rows = terminal.rows
+    let cols = terminal.cols
+    var cells = [[Cell]]()
+    cells.reserveCapacity(rows)
+
+    let buffer = terminal.buffer
+    // buffer.lines 是 CircularList，索引 0 是 scrollback 最早的行
+    // buffer.yBase 是当前可见区域第一行在 lines 中的索引
+    let startLine = buffer.yBase - scrollbackOffset
+
+    for i in 0..<rows {
+        let lineIndex = startLine + i
+        guard lineIndex >= 0, lineIndex < buffer.lines.count else {
+            cells.append(Array(repeating: .empty, count: cols))
+            continue
+        }
+        let line = buffer.lines[lineIndex]
+        var rowCells = [Cell]()
+        rowCells.reserveCapacity(cols)
+        for col in 0..<cols {
+            if col < line.count {
+                let cd = line[col]
+                rowCells.append(Cell(
+                    character: cd.getCharacter(),
+                    attributes: mapAttributes(cd.attribute)
+                ))
+            } else {
+                rowCells.append(.empty)
+            }
+        }
+        cells.append(rowCells)
+    }
+
+    let cursorVisible = scrollbackOffset == 0
+    return ScreenBufferSnapshot(
+        cells: cells,
+        cursor: CursorState(
+            row: terminal.buffer.y,
+            col: terminal.buffer.x,
+            visible: cursorVisible
+        ),
+        rows: rows,
+        cols: cols
+    )
+}
+```
+
+#### 备选方案 B: getLine 加偏移计算
+
+如 `buffer.lines` 访问级别受限，可通过 `terminal.getLine(row:)` 加行号偏移实现：
+
+```swift
+// 备选方案 B: getLine + yDisp 偏移计算
+public func createSnapshot(scrollbackOffset: Int = 0) -> ScreenBufferSnapshot {
+    let rows = terminal.rows
+    let cols = terminal.cols
+    var cells = [[Cell]]()
+    cells.reserveCapacity(rows)
+
+    // getLine(row:) 的 row 参数通常基于当前显示位置
+    // 通过操作 terminal.buffer.yDisp 模拟滚动偏移
+    // 需验证 yDisp 是否可写或是否有 scroll API
+    for visibleRow in 0..<rows {
+        let adjustedRow = visibleRow - scrollbackOffset
+        guard let line = terminal.getLine(row: adjustedRow) else {
+            cells.append(Array(repeating: .empty, count: cols))
+            continue
+        }
+        var rowCells = [Cell]()
+        rowCells.reserveCapacity(cols)
+        for col in 0..<cols {
+            if col < line.count {
+                let cd = line[col]
+                rowCells.append(Cell(
+                    character: cd.getCharacter(),
+                    attributes: mapAttributes(cd.attribute)
+                ))
+            } else {
+                rowCells.append(.empty)
+            }
+        }
+        cells.append(rowCells)
+    }
+
+    let cursorVisible = scrollbackOffset == 0
+    return ScreenBufferSnapshot(
+        cells: cells,
+        cursor: CursorState(
+            row: terminal.buffer.y,
+            col: terminal.buffer.x,
+            visible: cursorVisible
+        ),
+        rows: rows,
+        cols: cols
+    )
+}
+```
+
+> **选择指引：** PF-3 验证时，优先验证原方案（`getScrollInvariantLine`）→ 备选 A（`buffer.lines`）→ 备选 B（`getLine` 偏移）。选择第一个可用且访问级别为 public 的方案。
+
 ---
 
 ## 8. InputHandler 设计
@@ -1173,6 +1373,7 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
 | terminalCols | AppConfig.terminalCols | 80 | SwiftTermAdapter 初始列数 |
 | terminalRows | AppConfig.terminalRows | 25 | SwiftTermAdapter 初始行数 |
 | scrollbackLines | AppConfig.scrollbackLines | 10,000 | SwiftTerm Terminal scrollback 大小 |
+| terminalType | AppConfig.terminalType | "xterm-256color" | PTYProcess 子进程 TERM 环境变量（见 §4.8） |
 
 ### 12.2 配置读取路径
 
@@ -1262,6 +1463,7 @@ V0.1 要求 vttest 基础测试项通过率 ≥ 80%。验证方式：
 | DefaultConfig 硬编码 | 基础字体/字号设置 UI |
 | 本地构建 | CI/CD 流水线（V0.1 期间搭建但不是内核交付物） |
 | Shell 退出 → 窗口关闭 | Shell 退出提示 + 可选关闭 |
+| TERM=xterm-256color 硬编码 | TERM 可用户配置（设置 UI） |
 
 ---
 

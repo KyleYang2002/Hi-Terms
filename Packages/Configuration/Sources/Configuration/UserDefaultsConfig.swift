@@ -36,4 +36,8 @@ public final class UserDefaultsConfig: AppConfig {
         let value = defaults.integer(forKey: "terminalRows")
         return value > 0 ? value : fallback.terminalRows
     }
+
+    public var terminalType: String {
+        defaults.string(forKey: "terminalType") ?? fallback.terminalType
+    }
 }

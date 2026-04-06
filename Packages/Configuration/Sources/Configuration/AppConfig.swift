@@ -8,4 +8,5 @@ public protocol AppConfig {
     var scrollbackLines: Int { get }
     var terminalCols: Int { get }
     var terminalRows: Int { get }
+    var terminalType: String { get }
 }

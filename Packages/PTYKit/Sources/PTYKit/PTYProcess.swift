@@ -9,6 +9,7 @@ import os.log
 public final class PTYProcess {
     public private(set) var pid: pid_t = -1
     public private(set) var masterFD: Int32 = -1
+    public var exitHandler: ((Int32) -> Void)?
     private let queue: DispatchQueue
     private var dispatchSource: DispatchSourceRead?
     private var dataHandler: ((Data) -> Void)?
@@ -35,6 +36,10 @@ public final class PTYProcess {
             if let workDir = configuration.workingDirectory {
                 chdir(workDir)
             }
+
+            // Set terminal type (always override) and locale (supplement only)
+            setenv("TERM", configuration.terminalType, 1)
+            setenv("LANG", "en_US.UTF-8", 0)
 
             // Merge environment
             for (key, value) in configuration.environment {
@@ -71,9 +76,10 @@ public final class PTYProcess {
                 self.asyncContinuation?.yield(data)
             } else if bytesRead == 0 {
                 // True EOF — shell exited
+                PTYLog.lifecycle.info("PTY read EOF: pid=\(self.pid)")
                 self.asyncContinuation?.finish()
                 source.cancel()
-                PTYLog.lifecycle.info("PTY read EOF: pid=\(self.pid)")
+                self.reapChildAndNotify()
             } else {
                 // bytesRead == -1 — read error
                 let err = errno
@@ -81,6 +87,7 @@ public final class PTYProcess {
                 PTYLog.io.error("PTY read error: pid=\(self.pid), errno=\(err)")
                 self.asyncContinuation?.finish()
                 source.cancel()
+                self.reapChildAndNotify()
             }
         }
         source.setCancelHandler { [weak self] in
@@ -135,6 +142,23 @@ public final class PTYProcess {
         kill(pid, SIGWINCH)
     }
 
+    /// Reaps the child process and calls exitHandler with the exit code.
+    /// Called on the per-PTY serial queue after EOF or read error.
+    private func reapChildAndNotify() {
+        guard pid > 0 else { return }
+        var status: Int32 = 0
+        let result = waitpid(pid, &status, 0)
+        let exitCode: Int32
+        if result > 0 && (status & 0x7F) == 0 {
+            // WIFEXITED: normal exit
+            exitCode = (status >> 8) & 0xFF  // WEXITSTATUS
+        } else {
+            exitCode = -1
+        }
+        pid = -1  // Mark as reaped to prevent double-reap in terminate()/deinit
+        exitHandler?(exitCode)
+    }
+
     /// Terminates the PTY process and reaps the child to avoid zombies.
     public func terminate() {
         guard pid > 0 else { return }
@@ -148,8 +172,9 @@ public final class PTYProcess {
             kill(pid, SIGKILL)
             waitpid(pid, &status, 0)
         }
+        pid = -1  // Mark as reaped
         dispatchSource?.cancel()
-        PTYLog.lifecycle.info("PTY terminated: pid=\(self.pid)")
+        PTYLog.lifecycle.info("PTY terminated")
     }
 
     deinit {

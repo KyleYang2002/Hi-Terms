@@ -8,6 +8,7 @@ public struct DefaultConfig: AppConfig, Sendable {
     public let scrollbackLines: Int = 10_000
     public let terminalCols: Int = 80
     public let terminalRows: Int = 25
+    public let terminalType: String = "xterm-256color"
 
     public init() {
         self.shellPath = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"

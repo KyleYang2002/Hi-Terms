@@ -8,6 +8,12 @@ import Foundation
 public final class SwiftTermAdapter: TerminalParser {
     public weak var delegate: TerminalParserDelegate?
 
+    /// Called when SwiftTerm generates response data (e.g., DA reply).
+    public var sendHandler: ((Data) -> Void)?
+
+    /// Called when SwiftTerm reports a changed row range. Used by DirtyRegion for incremental rendering.
+    public var rangeChangedHandler: ((Int, Int) -> Void)?
+
     /// The underlying SwiftTerm terminal instance.
     public let terminal: Terminal
     private let delegateAdapter: SwiftTermDelegateAdapter
@@ -15,9 +21,13 @@ public final class SwiftTermAdapter: TerminalParser {
     public init(cols: Int = 80, rows: Int = 25) {
         self.delegateAdapter = SwiftTermDelegateAdapter()
         self.terminal = Terminal(delegate: delegateAdapter, options: TerminalOptions(cols: cols, rows: rows))
-        delegateAdapter.onBufferUpdated = { [weak self] in
+        delegateAdapter.onSendData = { [weak self] data in
+            self?.sendHandler?(data)
+        }
+        delegateAdapter.onRangeChanged = { [weak self] startY, endY in
             guard let self = self else { return }
             self.delegate?.parser(self, didReceiveAction: .bufferUpdated)
+            self.rangeChangedHandler?(startY, endY)
         }
     }
 
@@ -37,31 +47,30 @@ public final class SwiftTermAdapter: TerminalParser {
     }
 
     /// Creates a ScreenBuffer snapshot from the current SwiftTerm state.
-    public func createSnapshot() -> ScreenBufferSnapshot {
+    ///
+    /// - Parameter scrollbackOffset: Number of rows to scroll back from the current viewport.
+    ///   When 0 (default), returns the current viewport. When > 0, shows historical lines.
+    public func createSnapshot(scrollbackOffset: Int = 0) -> ScreenBufferSnapshot {
         let rows = terminal.rows
         let cols = terminal.cols
         var cells = [[Cell]]()
         cells.reserveCapacity(rows)
 
-        for row in 0..<rows {
-            guard let line = terminal.getLine(row: row) else {
-                cells.append(Array(repeating: .empty, count: cols))
-                continue
+        // Clamp scrollback offset to available history
+        let maxScrollback = terminal.buffer.yDisp
+        let effectiveOffset = max(0, min(scrollbackOffset, maxScrollback))
+
+        if effectiveOffset == 0 {
+            // Current viewport — use getLine for best compatibility
+            for row in 0..<rows {
+                cells.append(readLine(row: row, cols: cols, useScrollInvariant: false, scrollInvariantRow: 0))
             }
-            var rowCells = [Cell]()
-            rowCells.reserveCapacity(cols)
-            for col in 0..<cols {
-                if col < line.count {
-                    let cd = line[col]
-                    rowCells.append(Cell(
-                        character: cd.getCharacter(),
-                        attributes: mapAttributes(cd.attribute)
-                    ))
-                } else {
-                    rowCells.append(.empty)
-                }
+        } else {
+            // Scrollback mode — use getScrollInvariantLine
+            let startLine = terminal.buffer.yDisp - effectiveOffset
+            for row in 0..<rows {
+                cells.append(readLine(row: row, cols: cols, useScrollInvariant: true, scrollInvariantRow: startLine + row))
             }
-            cells.append(rowCells)
         }
 
         return ScreenBufferSnapshot(
@@ -69,11 +78,38 @@ public final class SwiftTermAdapter: TerminalParser {
             cursor: CursorState(
                 row: terminal.buffer.y,
                 col: terminal.buffer.x,
-                visible: true
+                visible: effectiveOffset == 0  // Hide cursor in scrollback mode
             ),
             rows: rows,
             cols: cols
         )
+    }
+
+    /// Reads a single line of cells from the terminal buffer.
+    private func readLine(row: Int, cols: Int, useScrollInvariant: Bool, scrollInvariantRow: Int) -> [Cell] {
+        let line: BufferLine?
+        if useScrollInvariant {
+            line = terminal.getScrollInvariantLine(row: scrollInvariantRow)
+        } else {
+            line = terminal.getLine(row: row)
+        }
+        guard let line = line else {
+            return Array(repeating: .empty, count: cols)
+        }
+        var rowCells = [Cell]()
+        rowCells.reserveCapacity(cols)
+        for col in 0..<cols {
+            if col < line.count {
+                let cd = line[col]
+                rowCells.append(Cell(
+                    character: cd.getCharacter(),
+                    attributes: mapAttributes(cd.attribute)
+                ))
+            } else {
+                rowCells.append(.empty)
+            }
+        }
+        return rowCells
     }
 
     private func mapAttributes(_ attr: Attribute) -> TextAttributes {
@@ -106,12 +142,15 @@ public final class SwiftTermAdapter: TerminalParser {
 
 /// Internal delegate adapter for SwiftTerm callbacks.
 private class SwiftTermDelegateAdapter: TerminalDelegate {
-    var onBufferUpdated: (() -> Void)?
+    var onSendData: ((Data) -> Void)?
+    var onRangeChanged: ((Int, Int) -> Void)?
 
-    func send(source: Terminal, data: ArraySlice<UInt8>) {}
+    func send(source: Terminal, data: ArraySlice<UInt8>) {
+        onSendData?(Data(data))
+    }
 
     func rangeChanged(source: Terminal, startY: Int, endY: Int) {
-        onBufferUpdated?()
+        onRangeChanged?(startY, endY)
     }
 
     func sizeChanged(source: Terminal) {}

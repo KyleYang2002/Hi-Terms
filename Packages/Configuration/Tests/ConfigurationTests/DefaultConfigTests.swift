@@ -10,6 +10,7 @@ final class DefaultConfigTests: XCTestCase {
         XCTAssertEqual(config.scrollbackLines, 10_000)
         XCTAssertEqual(config.terminalCols, 80)
         XCTAssertEqual(config.terminalRows, 25)
+        XCTAssertEqual(config.terminalType, "xterm-256color")
     }
 
     func testUserDefaultsConfigFallback() {

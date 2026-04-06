@@ -47,6 +47,89 @@ Phase F: 集成验收（B01-B12 全部通过）
 
 **目标：** 修复 V0.0 → V0.1 的接口不匹配，为后续 Phase 铺路。完成后现有 40+ 测试仍全部通过。
 
+### Phase A 前置验证（Pre-flight Checks）
+
+> Phase A 修改现有 V0.0 代码，必须先确认基线状态良好且关键 API 可用。以下验证**全部通过后**方可开始 A0-A6 任务。
+
+#### PF-1: 基线测试验证
+
+**目的：** 确认 V0.0 的 40+ 测试在当前 codebase 上全部通过，建立可信基线。
+
+**步骤：**
+1. 执行 `make test`，记录结果
+2. 如有失败，必须先修复至全部通过，再开始 Phase A
+3. 记录测试总数和通过数作为基线快照
+
+**通过标准：** 全部测试绿色，0 失败，0 错误
+
+#### PF-2: SwiftTerm v1.13.0 构建验证
+
+**目的：** 确认 SwiftTerm 依赖能正常解析和编译。
+
+**步骤：**
+1. 执行 `make build`，确认 TerminalCore（依赖 SwiftTerm）编译成功
+2. 确认 `Package.resolved` 中 SwiftTerm 版本为 1.13.0
+
+**通过标准：** 编译成功，版本匹配
+
+#### PF-3: SwiftTerm Scrollback API 可用性验证
+
+**目的：** 确认 A3（scrollback 支持）的技术方案可行性，避免编码后推翻重写。
+
+**步骤：**
+1. 在 SwiftTerm v1.13.0 源码中搜索 `getScrollInvariantLine` 方法
+   - 如存在：记录签名和参数含义，确认可直接使用
+   - 如不存在：执行备选方案验证（步骤 2-4）
+2. 检查 `terminal.buffer` 的公开属性，特别是：
+   - `lines` 属性是否为 public（类型 CircularList）
+   - `scrollTop` / `scrollBottom` / `yBase` / `yDisp` 等属性的访问级别
+3. 检查 `terminal.getLine(row:)` 的行为：
+   - 传入负数行号时的返回值（nil? scrollback 行?）
+   - 传入 `>= terminal.rows` 行号时的返回值
+4. 编写临时 spike 测试（在 `SwiftTermSpikeTests.swift` 中新增）：
+   - 向 adapter 灌入超过 25 行的数据（触发 scrollback）
+   - 尝试用 `getScrollInvariantLine`、`terminal.buffer.lines`、`getLine` 负行号三种方式读取历史行
+   - 记录哪种方式成功获取到 scrollback 内容
+5. 根据验证结果更新技术设计 §7.6 的"API 验证结果"占位标记
+
+**通过标准：** 至少一种 scrollback 访问方式验证成功，并记录最终采用方案
+
+#### Go/No-Go 决策矩阵
+
+| PF-1 结果 | PF-2 结果 | PF-3 结果 | 决策 |
+|-----------|-----------|-----------|------|
+| 通过 | 通过 | `getScrollInvariantLine` 可用 | **Go:** 按原技术设计执行 A0-A6 |
+| 通过 | 通过 | 仅 `buffer.lines` 可用 | **Go:** A3 改用 buffer.lines 方案，更新技术设计 §7.6 |
+| 通过 | 通过 | 仅 `getLine` 偏移计算可行 | **Go:** A3 改用 getLine 偏移方案，更新技术设计 §7.6 |
+| 通过 | 通过 | 三种方案均不可行 | **No-Go:** 暂停 A3，需研究 SwiftTerm fork 或替代方案 |
+| 失败 | — | — | **No-Go:** 先修复基线测试 |
+| — | 失败 | — | **No-Go:** 解决 SwiftTerm 编译问题 |
+
+---
+
+### A0: 子进程环境变量策略实现
+
+**文件：**
+- `Packages/PTYKit/Sources/PTYKit/PTYConfiguration.swift`
+- `Packages/PTYKit/Sources/PTYKit/PTYProcess.swift`
+- `Packages/Configuration/Sources/Configuration/AppConfig.swift`
+- `Packages/Configuration/Sources/Configuration/DefaultConfig.swift`
+
+**设计参考：** 技术设计 §4.8
+
+**任务：**
+1. `AppConfig` 协议新增 `terminalType: String` 属性
+2. `DefaultConfig` 新增 `public let terminalType: String = "xterm-256color"`
+3. `PTYConfiguration` 新增 `terminalType: String` 属性（默认值 `"xterm-256color"`），更新 `init` 参数列表
+4. `PTYProcess.swift` 子进程（`fd == 0` 分支）中，在用户自定义环境变量循环之前添加：
+   - `setenv("TERM", configuration.terminalType, 1)` — 始终强制覆盖
+   - `setenv("LANG", "en_US.UTF-8", 0)` — 仅补充，不覆盖已有值
+5. 新增单元测试（ConfigurationTests）：验证 `DefaultConfig().terminalType == "xterm-256color"`
+6. 新增单元测试（PTYKitTests）：验证 `PTYConfiguration.default.terminalType == "xterm-256color"`
+7. 新增集成测试（IntegrationTests）：通过 PTY 执行 `echo $TERM`，验证输出包含 `xterm-256color`
+
+**验证：** `make test` 全部通过 + 新增 3 个环境变量测试通过
+
 ### A1: PTYProcess 新增 exitHandler
 
 **文件：** `Packages/PTYKit/Sources/PTYKit/PTYProcess.swift`
@@ -138,10 +221,17 @@ Phase F: 集成验收（B01-B12 全部通过）
 
 ### Phase A 里程碑
 
-- [ ] 现有 40+ 测试全部通过
-- [ ] 新增 exitHandler、send()、scrollback、rangeChanged 测试通过
+前置验证：
+- [ ] PF-1: V0.0 全部 40+ 测试通过（基线确认）
+- [ ] PF-2: SwiftTerm v1.13.0 构建验证通过
+- [ ] PF-3: Scrollback API 可用性验证完成，最终方案确定
+
+任务完成：
+- [ ] A0: TERM=xterm-256color 环境变量策略实现 + 测试通过
+- [ ] A1-A6: 现有 40+ 测试全部通过
+- [ ] 新增 exitHandler、send()、scrollback、rangeChanged、环境变量测试通过
 - [ ] `make build` Debug + Release 均成功
-- [ ] Git commit: "V0.1 Phase A: 修复接口不匹配，为 V0.1 实现做准备"
+- [ ] Git commit: "V0.1 Phase A: 修复接口不匹配，实现环境变量策略，为 V0.1 实现做准备"
 
 ---
 
@@ -435,7 +525,14 @@ make test  # 包含 SessionTests, SessionRegistryTests
 ## 9. 任务依赖全景图
 
 ```
-A1 (exitHandler) ──────────────────────────────┐
+PF-1 (基线测试验证) ───────────────────────────┐
+PF-2 (SwiftTerm 构建验证) ─────────────────────┤
+PF-3 (Scrollback API 验证) ────────────────────┤
+                                                ↓
+                                     前置验证 Go/No-Go 决策
+                                                ↓
+A0 (TERM 环境变量策略) ────────────────────────┐
+A1 (exitHandler) ──────────────────────────────┤
 A2 (send callback) ────────────────────────────┤
 A3 (scrollback) ───────────────────────────────┤
 A4 (rangeChanged) ─────────────────────────────┤
@@ -472,7 +569,8 @@ F1-F6 (B01-B12 验收) ───────────────────
 ```
 
 **Phase 内部并行度：**
-- Phase A: A1-A4 可并行，A5 需在 A1 之后（exitHandler 用到 exitCode），A6 最后执行
+- 前置验证: PF-1 和 PF-2 可并行，PF-3 需在 PF-2 之后（依赖 SwiftTerm 编译成功）
+- Phase A: A0 可独立执行（最先），A1-A4 可并行，A5 需在 A1 之后（exitHandler 用到 exitCode），A6 最后执行
 - Phase B: B1 和 B2 可并行
 - Phase C: C1 先，C2 后
 - Phase D: D1 先，D2/D3 可并行，D4 最后
@@ -484,7 +582,7 @@ F1-F6 (B01-B12 验收) ───────────────────
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|---------|
-| SwiftTerm scrollback API 可能不暴露 | A3 实现受阻 | 实施前先验证 API，必要时直接访问 terminal.buffer.lines |
+| SwiftTerm scrollback API 可能不暴露 | A3 实现受阻 | **PF-3 前置验证**：Phase A 开始前验证 API 可用性并确定最终方案（见 Phase A 前置验证小节）。备选方案：buffer.lines 直接访问 / getLine 偏移计算（见技术设计 §7.6） |
 | CoreTextRenderer 性能不达标 (< 30fps) | B09 性能验收 | 先实现功能正确性，性能优化延后；行级脏区已是第一层优化 |
 | vttest 通过率不达 80% | B09 | 分析失败项，优先修复高影响项；低影响项可标记为已知限制（V0.2 修复） |
 | TerminalSession 跨模块依赖 | D2 | 采用管线注入模式（外部创建 Pipeline，注入 Session），避免 TerminalCore 依赖 TerminalUI |

@@ -88,7 +88,7 @@ V0.1 直接继承 V0.0 的全部工程基础设施，不重复搭建：
 │       ↓                                                  │
 │  RenderCoordinator.submitSnapshot(adapter.createSnapshot)│
 └──────────────────────────┬──────────────────────────────┘
-                           │ os_unfair_lock 保护
+                           │ OSAllocatedUnfairLock 保护
                            ↓
 ┌──────────────────────────────────────────────────────────┐
 │ Main Thread (CADisplayLink 回调)                         │
@@ -120,9 +120,9 @@ Main Thread:
 |------|------|------|
 | PTY 读取 | per-Session DispatchQueue | DispatchIO 回调自动在指定队列执行 |
 | 解析 + Buffer 更新 | per-Session DispatchQueue | 与 PTY 读取同队列，无跨线程开销 |
-| DirtyRegion 标记 | per-Session DispatchQueue | os_unfair_lock 保护 |
-| RenderCoordinator 提交快照 | per-Session DispatchQueue | os_unfair_lock 保护写入 |
-| CADisplayLink 回调 | Main Thread | os_unfair_lock 保护读取 |
+| DirtyRegion 标记 | per-Session DispatchQueue | OSAllocatedUnfairLock 保护 |
+| RenderCoordinator 提交快照 | per-Session DispatchQueue | OSAllocatedUnfairLock 保护写入 |
+| CADisplayLink 回调 | Main Thread | OSAllocatedUnfairLock 保护读取 |
 | CoreText 渲染 | Main Thread | CALayer 操作必须在主线程 |
 | 键盘/鼠标事件 | Main Thread | NSEvent 回调在主线程 |
 | PTY 写入 | Main Thread → 直接写 fd | write() 是线程安全的 POSIX 调用 |
@@ -671,22 +671,24 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
 ```swift
 /// 协调后台线程的 buffer 更新与主线程的渲染节奏。
 /// CADisplayLink 回调驱动渲染，确保最大 60fps。
-public final class RenderCoordinator {
-    private var displayLink: CADisplayLink?
-    private var lock = os_unfair_lock()
+public final class RenderCoordinator: NSObject, @unchecked Sendable {
+    private let lock = OSAllocatedUnfairLock()
     private var latestSnapshot: ScreenBufferSnapshot?
+    private var displayLink: CADisplayLink?
     private let dirtyRegion: DirtyRegion
 
-    weak var renderer: TerminalRendering?
-    weak var targetLayer: CALayer?
+    public weak var renderer: (any TerminalRendering)?
+    public weak var targetLayer: CALayer?
 
     public init(dirtyRegion: DirtyRegion) {
         self.dirtyRegion = dirtyRegion
+        super.init()
     }
 
     /// 启动渲染循环（在主线程调用）
     public func startDisplayLink() {
-        let link = CADisplayLink(target: self, selector: #selector(onDisplayLink))
+        guard displayLink == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(onDisplayLink(_:)))
         link.add(to: .main, forMode: .common)
         self.displayLink = link
     }
@@ -699,24 +701,23 @@ public final class RenderCoordinator {
 
     /// 后台线程调用：提交新快照
     public func submitSnapshot(_ snapshot: ScreenBufferSnapshot) {
-        os_unfair_lock_lock(&lock)
-        defer { os_unfair_lock_unlock(&lock) }
+        lock.lock()
+        defer { lock.unlock() }
         latestSnapshot = snapshot
     }
 
     /// CADisplayLink 回调（主线程）
-    @objc private func onDisplayLink() {
-        os_unfair_lock_lock(&lock)
+    @objc private func onDisplayLink(_ displayLink: CADisplayLink) {
+        lock.lock()
         let snapshot = latestSnapshot
-        os_unfair_lock_unlock(&lock)
+        lock.unlock()
 
         guard let snapshot, let renderer, let targetLayer else { return }
 
-        let cursor = snapshot.cursor
         renderer.render(
             buffer: snapshot,
             dirtyRegion: dirtyRegion,
-            cursor: cursor,
+            cursor: snapshot.cursor,
             into: targetLayer
         )
     }
@@ -1290,8 +1291,8 @@ Session、Pipeline、PTYProcess 释放（ARC）
 | 共享数据 | 写入线程 | 读取线程 | 保护机制 |
 |---------|---------|---------|---------|
 | SwiftTerm Terminal 对象 | PTY I/O Queue | PTY I/O Queue | 单线程访问（无竞争） |
-| ScreenBufferSnapshot | PTY I/O Queue 创建 | Main Thread 消费 | os_unfair_lock（RenderCoordinator） |
-| DirtyRegion | PTY I/O Queue merge | Main Thread swapAndClear | os_unfair_lock（DirtyRegion 内部） |
+| ScreenBufferSnapshot | PTY I/O Queue 创建 | Main Thread 消费 | OSAllocatedUnfairLock（RenderCoordinator） |
+| DirtyRegion | PTY I/O Queue merge | Main Thread swapAndClear | OSAllocatedUnfairLock（DirtyRegion 内部） |
 | SessionRegistry | 任意线程 | 任意线程 | 串行 DispatchQueue |
 | PTY fd | PTY I/O Queue 读 / Main Thread 写 | — | POSIX write() 线程安全 |
 

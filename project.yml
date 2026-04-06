@@ -44,6 +44,9 @@ targets:
     dependencies:
       - package: TerminalUI
       - package: Configuration
+      - package: TerminalCore
+      - package: TerminalRenderer
+      - package: PTYKit
 
   TerminalCoreTests:
     type: bundle.unit-test

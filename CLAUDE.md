@@ -21,7 +21,11 @@ The primary documentation language is Chinese (中文).
 - `docs/design/hi-terms-v0.0-technical-design.md` — v0.0 engineering baseline: module structure, data flow, SwiftTerm evaluation plan, threading model
 - `docs/reqs/hi-terms-v0.1-acceptance.md` — v0.1 acceptance criteria (SSOT for v0.1 verification, 12 items B01-B12)
 - `docs/design/hi-terms-v0.1-technical-design.md` — v0.1 terminal kernel: session foundation, rendering pipeline, input handling, threading model
-- `docs/plans/hi-terms-v0.1-implementation-plan.md` — v0.1 implementation plan (6 phases A-F, task breakdown)
+- `docs/plans/archived/hi-terms-v0.1-implementation-plan.md` — v0.1 implementation plan (6 phases A-F, task breakdown; archived, task definitions referenced by Next2Do)
+- `Next2Do/` — execution plan SSOT (replaces docs/plans/ for active planning):
+  - `Next2Do/v0.1-execution.md` — v0.1 Phase C-F execution tracking, task status, deviation log
+  - `Next2Do/v0.2-blueprint.md` — v0.2 preliminary technical planning
+  - `Next2Do/risks-and-decisions.md` — cross-version risk register and runtime decision log
 
 ## Architecture (Four-Layer Design)
 
@@ -45,20 +49,28 @@ The primary documentation language is Chinese (中文).
 
 ## Current State
 
-V0.0 engineering baseline complete. V0.1 (terminal kernel) in development. The repo now has:
+V0.0 engineering baseline complete. V0.1 (terminal kernel) in development — Phase A-E coding complete, Phase F (integration verification) pending macOS environment. The repo now has:
 - Xcode project (via XcodeGen `project.yml`) with HiTerms app target and 6 test targets
 - 5 SPM packages: TerminalCore, PTYKit, TerminalRenderer, TerminalUI, Configuration
 - SwiftTerm v1.13.0 adopted (Strategy B — SwiftTerm owns state, Hi-Terms reads cells)
-- SwiftTermAdapter wrapping SwiftTerm.Terminal behind TerminalParser protocol
-- PTYProcess spike (forkpty + DispatchIO)
-- OSLog subsystems configured (com.hiterms.pty/terminal/renderer/app)
-- 40 tests passing across all modules
+- SwiftTermAdapter with exitHandler, sendHandler, rangeChangedHandler, scrollback support
+- PTYProcess with forkpty + DispatchIO + exitHandler
+- CoreTextRenderer (ANSI 8-color, text attributes, cursor) + RenderCoordinator (CADisplayLink)
+- DefaultTerminalPipeline connecting PTY → Parser → DirtyRegion → RenderCoordinator
+- Session protocol + TerminalSession (pipeline injection) + SessionRegistry (GCD thread-safe)
+- InputHandler (keyboard mapping, Ctrl combos, SGR mouse reporting)
+- TerminalView (NSView + CALayer, keyboard/mouse/scroll events)
+- TerminalWindowController (font-metrics-driven window sizing)
+- AppDelegate assembling full pipeline: PTY → Adapter → Pipeline → Session → Window
+- OSLog subsystems configured (com.hiterms.pty/terminal/renderer/ui/app)
+- 75+ tests across all modules (50 existing + 25+ new for pipeline/session/input)
 - DMG packaging script, vttest automation framework, performance baseline tooling
 - `Tools/verify-acceptance.sh` for automated A01-A11 verification
 - V0.1 technical design (16 sections, session foundation + rendering pipeline + input + threading)
-- V0.1 acceptance criteria (12 items B01-B12) and implementation plan (6 phases A-F)
+- V0.1 acceptance criteria (12 items B01-B12)
+- `Next2Do/` execution plan directory (SSOT for active planning, replaces docs/plans/)
 
-Current step: implement v0.1 terminal kernel per implementation plan (Phase A: base fixes → Phase F: acceptance).
+Current step: v0.1 Phase C-E coding complete. Next: Phase F verification on macOS (make build, make test, manual B02-B12 acceptance). See `Next2Do/v0.1-execution.md` for task status.
 
 ## Development Workflow
 

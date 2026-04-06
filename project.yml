@@ -79,6 +79,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         ENABLE_APP_SANDBOX: NO
     dependencies:
+      - package: TerminalCore
       - package: TerminalRenderer
 
   TerminalUITests:

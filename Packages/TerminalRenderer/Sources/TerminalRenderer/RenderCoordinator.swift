@@ -33,7 +33,8 @@ public final class RenderCoordinator: NSObject, @unchecked Sendable {
     /// Starts the CADisplayLink render loop on the main RunLoop.
     public func startDisplayLink() {
         guard displayLink == nil else { return }
-        let link = CADisplayLink(target: self, selector: #selector(onDisplayLink(_:)))
+        guard let screen = NSScreen.main else { return }
+        let link = screen.displayLink(target: self, selector: #selector(onDisplayLink(_:)))
         link.add(to: .main, forMode: .common)
         self.displayLink = link
     }

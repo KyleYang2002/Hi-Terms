@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		09965F9B6E4B9CCF490E81E1 /* SwiftTermSpikeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35F53F6BDF1E46E82294B940 /* SwiftTermSpikeTests.swift */; };
 		15DCD5F5888961A0839FF155 /* PTYKit in Frameworks */ = {isa = PBXBuildFile; productRef = CA71C6ACA239DE7441EA5668 /* PTYKit */; };
+		1B08B81AFD3AC19CDBACB98A /* CoreTextRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BF7E640B4C72873F00CB5B /* CoreTextRendererTests.swift */; };
 		1E58A1AAB6AC1B87572F4536 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8040B9DC2355D1858DB9F028 /* AppDelegate.swift */; };
 		231D3805AA6A527A9BF9CFE7 /* TerminalRenderer in Frameworks */ = {isa = PBXBuildFile; productRef = 1588E07AF7602C8439BB463B /* TerminalRenderer */; };
 		255A421CF69B366025F64CEE /* TerminalUI in Frameworks */ = {isa = PBXBuildFile; productRef = 1920E5DADDA4DEBF281163CC /* TerminalUI */; };
@@ -22,6 +23,7 @@
 		89AF0DF2681B5D27CB2941B7 /* OSLogVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC42E06E871D0CFCDDE1082 /* OSLogVerificationTests.swift */; };
 		9526C66E240AA2E1965F3F77 /* Configuration in Frameworks */ = {isa = PBXBuildFile; productRef = 04C64285E8857D4AC91F783A /* Configuration */; };
 		9DEA751AA576027154DB2DA6 /* PTYProcessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 362C48BF4DB66C909BAC47EC /* PTYProcessTests.swift */; };
+		AA802676E870496297AE85BA /* RenderCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88330FFB3B90950E2D2EB0B0 /* RenderCoordinatorTests.swift */; };
 		BA49EE1693C77882AC344B8A /* DefaultConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF8F8ED4441F4A074C3ECFF /* DefaultConfigTests.swift */; };
 		C6EEAF340398C96BF430EB69 /* TerminalRenderer in Frameworks */ = {isa = PBXBuildFile; productRef = 2C28404CB3B58AC574166D8B /* TerminalRenderer */; };
 		C91B40B0700DC672F7EFE9CC /* TerminalCore in Frameworks */ = {isa = PBXBuildFile; productRef = 27FB322122036D177F0C8D98 /* TerminalCore */; };
@@ -29,11 +31,12 @@
 		D19826E7829FA0C4E929BB50 /* ScreenBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17478702FCFDD47EB71C6438 /* ScreenBufferTests.swift */; };
 		D4A47AEA205E5F83A4D762B9 /* Configuration in Frameworks */ = {isa = PBXBuildFile; productRef = 9B35BB0426CD792873BC7ED0 /* Configuration */; };
 		E290BBD41BFF9B71C5017E9C /* FontMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375B6A495018E75A911A2274 /* FontMetricsTests.swift */; };
+		F50541BE4EE124CA1BD78F87 /* TerminalRenderer in Frameworks */ = {isa = PBXBuildFile; productRef = 3F8AA1C4B389BF3583D79013 /* TerminalRenderer */; };
 		F72D472D39B07D931DA10959 /* TerminalPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAA0646281DACF3EB30FF48 /* TerminalPipelineTests.swift */; };
 		F7F7ADC0B87E389E77C9ABB6 /* TerminalCore in Frameworks */ = {isa = PBXBuildFile; productRef = FA829FF1272F3FB8B472B028 /* TerminalCore */; };
 		FAD32E2F87D444E277A916FD /* PTYKit in Frameworks */ = {isa = PBXBuildFile; productRef = 126DBAB017A8B12C211AAD1B /* PTYKit */; };
 		FBBB1F8C20E080B328DCFFFB /* Logging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF75C88D874A8718737FD87 /* Logging.swift */; };
-		FEF0211285979C0019FF6DCF /* TerminalRenderer in Frameworks */ = {isa = PBXBuildFile; productRef = 3F8AA1C4B389BF3583D79013 /* TerminalRenderer */; };
+		FEF0211285979C0019FF6DCF /* TerminalCore in Frameworks */ = {isa = PBXBuildFile; productRef = 1937E35B9DF18A229EF06F72 /* TerminalCore */; };
 		FF413DF9331D2DD92ED3C6B5 /* SwiftTermAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DE7780ED200E823155765FB /* SwiftTermAdapterTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -61,6 +64,7 @@
 		39711194C5AC651AC58B506B /* PTYKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PTYKit; path = Packages/PTYKit; sourceTree = SOURCE_ROOT; };
 		40153B918A4916510D9F76E7 /* TerminalRenderer */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TerminalRenderer; path = Packages/TerminalRenderer; sourceTree = SOURCE_ROOT; };
 		4EF75C88D874A8718737FD87 /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
+		54BF7E640B4C72873F00CB5B /* CoreTextRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTextRendererTests.swift; sourceTree = "<group>"; };
 		5B70FC7A7386BA6867B321BC /* HiTerms.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HiTerms.entitlements; sourceTree = "<group>"; };
 		67E8ED22E4414992AAA801AD /* CellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CellTests.swift; sourceTree = "<group>"; };
 		6C8A74707BF97A0DAFFF382D /* IntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -68,6 +72,7 @@
 		8040B9DC2355D1858DB9F028 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		85CF323E9FCC88CDB235ABEF /* TerminalRendererTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TerminalRendererTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		85DC97DC6CD96021C5596FDF /* TerminalUI */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TerminalUI; path = Packages/TerminalUI; sourceTree = SOURCE_ROOT; };
+		88330FFB3B90950E2D2EB0B0 /* RenderCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderCoordinatorTests.swift; sourceTree = "<group>"; };
 		9707A6B88D2E77F6E300B0CD /* TerminalCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TerminalCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		992E604C85CD34DB92D387D4 /* ConfigurationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ConfigurationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BC75532917AC2FDB1371ED01 /* PTYKitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PTYKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -101,7 +106,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FEF0211285979C0019FF6DCF /* TerminalRenderer in Frameworks */,
+				FEF0211285979C0019FF6DCF /* TerminalCore in Frameworks */,
+				F50541BE4EE124CA1BD78F87 /* TerminalRenderer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -202,8 +208,10 @@
 		8BC3E5595DC4CA2D2512DEDF /* TerminalRendererTests */ = {
 			isa = PBXGroup;
 			children = (
+				54BF7E640B4C72873F00CB5B /* CoreTextRendererTests.swift */,
 				1814517847DF1C4ED550D0FA /* DirtyRegionTests.swift */,
 				375B6A495018E75A911A2274 /* FontMetricsTests.swift */,
+				88330FFB3B90950E2D2EB0B0 /* RenderCoordinatorTests.swift */,
 			);
 			name = TerminalRendererTests;
 			path = Packages/TerminalRenderer/Tests/TerminalRendererTests;
@@ -335,6 +343,7 @@
 			);
 			name = TerminalRendererTests;
 			packageProductDependencies = (
+				1937E35B9DF18A229EF06F72 /* TerminalCore */,
 				3F8AA1C4B389BF3583D79013 /* TerminalRenderer */,
 			);
 			productName = TerminalRendererTests;
@@ -453,8 +462,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1B08B81AFD3AC19CDBACB98A /* CoreTextRendererTests.swift in Sources */,
 				D10A13DC68BEFB276591FD6D /* DirtyRegionTests.swift in Sources */,
 				E290BBD41BFF9B71C5017E9C /* FontMetricsTests.swift in Sources */,
+				AA802676E870496297AE85BA /* RenderCoordinatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1007,6 +1018,10 @@
 		1920E5DADDA4DEBF281163CC /* TerminalUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = TerminalUI;
+		};
+		1937E35B9DF18A229EF06F72 /* TerminalCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TerminalCore;
 		};
 		27FB322122036D177F0C8D98 /* TerminalCore */ = {
 			isa = XCSwiftPackageProductDependency;

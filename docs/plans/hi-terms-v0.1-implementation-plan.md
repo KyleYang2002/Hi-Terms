@@ -222,16 +222,16 @@ Phase F: 集成验收（B01-B12 全部通过）
 ### Phase A 里程碑
 
 前置验证：
-- [ ] PF-1: V0.0 全部 40+ 测试通过（基线确认）
-- [ ] PF-2: SwiftTerm v1.13.0 构建验证通过
-- [ ] PF-3: Scrollback API 可用性验证完成，最终方案确定
+- [x] PF-1: V0.0 全部 40+ 测试通过（基线确认）
+- [x] PF-2: SwiftTerm v1.13.0 构建验证通过
+- [x] PF-3: Scrollback API 可用性验证完成，最终方案确定（采用 getScrollInvariantLine）
 
 任务完成：
-- [ ] A0: TERM=xterm-256color 环境变量策略实现 + 测试通过
-- [ ] A1-A6: 现有 40+ 测试全部通过
-- [ ] 新增 exitHandler、send()、scrollback、rangeChanged、环境变量测试通过
-- [ ] `make build` Debug + Release 均成功
-- [ ] Git commit: "V0.1 Phase A: 修复接口不匹配，实现环境变量策略，为 V0.1 实现做准备"
+- [x] A0: TERM=xterm-256color 环境变量策略实现 + 测试通过
+- [x] A1-A6: 现有 40+ 测试全部通过（50 tests, 0 failures）
+- [x] 新增 exitHandler、send()、scrollback、rangeChanged、环境变量测试通过
+- [x] `make build` Debug + Release 均成功
+- [x] Git commit: 558d074 "V0.1 Phase A" + ed01d87 "Fix rangeChanged dead callback"
 
 ---
 
@@ -278,9 +278,9 @@ Phase F: 集成验收（B01-B12 全部通过）
 
 ### Phase B 里程碑
 
-- [ ] CoreTextRenderer + RenderCoordinator 编译通过
-- [ ] 颜色映射、光标计算单元测试通过
-- [ ] `make test` 全部通过
+- [x] CoreTextRenderer + RenderCoordinator 编译通过
+- [x] 颜色映射、光标计算单元测试通过
+- [ ] `make test` 全部通过（待 macOS 环境验证）
 - [ ] Git commit: "V0.1 Phase B: 实现 CoreTextRenderer 和 RenderCoordinator"
 
 ---

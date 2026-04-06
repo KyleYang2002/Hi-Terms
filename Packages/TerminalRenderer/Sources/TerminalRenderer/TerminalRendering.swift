@@ -6,7 +6,7 @@ import TerminalCore
 ///
 /// V0.0 provides only the protocol definition. V0.1 will add CoreTextRenderer.
 /// Future versions may add a Metal-based renderer.
-public protocol TerminalRendering {
+public protocol TerminalRendering: AnyObject {
     func render(
         buffer: ScreenBufferSnapshot,
         dirtyRegion: DirtyRegion,

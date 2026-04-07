@@ -8,7 +8,7 @@ import TerminalUI
 
 private let logger = Logger(subsystem: "com.hiterms.app", category: "general")
 
-@main
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: TerminalWindowController?
     private var session: TerminalSession?

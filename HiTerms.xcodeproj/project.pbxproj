@@ -13,24 +13,31 @@
 		1E58A1AAB6AC1B87572F4536 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8040B9DC2355D1858DB9F028 /* AppDelegate.swift */; };
 		231D3805AA6A527A9BF9CFE7 /* TerminalRenderer in Frameworks */ = {isa = PBXBuildFile; productRef = 1588E07AF7602C8439BB463B /* TerminalRenderer */; };
 		255A421CF69B366025F64CEE /* TerminalUI in Frameworks */ = {isa = PBXBuildFile; productRef = 1920E5DADDA4DEBF281163CC /* TerminalUI */; };
+		2873F7E203F41536D95FA923 /* TerminalCore in Frameworks */ = {isa = PBXBuildFile; productRef = 89E1D18015E1E5EAF11605F3 /* TerminalCore */; };
 		36B1B863141341CFC164892E /* TerminalUI in Frameworks */ = {isa = PBXBuildFile; productRef = 95047662D3EC8CB2C293BA9F /* TerminalUI */; };
 		3799EABAD506C7D847BA09F9 /* PerformanceBaselineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC61C7828E2F1B32D40BCF7 /* PerformanceBaselineTests.swift */; };
 		3F7DC1453DF9DE5077186904 /* PTYKit in Frameworks */ = {isa = PBXBuildFile; productRef = A6B876353025F08531AFD725 /* PTYKit */; };
+		484CBAD2C5F8BFEA2262FE3A /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = F913ABA6A41041097ED1EBB5 /* main.swift */; };
+		54303F9D411519473B8C432F /* TerminalRenderer in Frameworks */ = {isa = PBXBuildFile; productRef = B274D755F436F4B9CA39A13F /* TerminalRenderer */; };
 		58FBB9533A9C168E99168C71 /* CellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E8ED22E4414992AAA801AD /* CellTests.swift */; };
 		6B5DEC967E6D157347C0C2FE /* TerminalCore in Frameworks */ = {isa = PBXBuildFile; productRef = A2D147AD558ED76FE1EC961D /* TerminalCore */; };
 		7C193321EF6516B0AA3DA344 /* Configuration in Frameworks */ = {isa = PBXBuildFile; productRef = BAE0AC57EE0A9F658752C20E /* Configuration */; };
 		86571D97A7B0CDEE022EC158 /* TerminalUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5633E36D910B41CF7B6AA195 /* TerminalUI */; };
 		89AF0DF2681B5D27CB2941B7 /* OSLogVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC42E06E871D0CFCDDE1082 /* OSLogVerificationTests.swift */; };
+		93E9832B95140D714E5CD965 /* InputHandlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 017C2CC1EC94AA174F1805D2 /* InputHandlerTests.swift */; };
 		9526C66E240AA2E1965F3F77 /* Configuration in Frameworks */ = {isa = PBXBuildFile; productRef = 04C64285E8857D4AC91F783A /* Configuration */; };
 		9DEA751AA576027154DB2DA6 /* PTYProcessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 362C48BF4DB66C909BAC47EC /* PTYProcessTests.swift */; };
 		AA802676E870496297AE85BA /* RenderCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88330FFB3B90950E2D2EB0B0 /* RenderCoordinatorTests.swift */; };
+		BA03BB47FC79344B4CA44BEE /* SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59604596664ADB686A790D70 /* SessionTests.swift */; };
 		BA49EE1693C77882AC344B8A /* DefaultConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF8F8ED4441F4A074C3ECFF /* DefaultConfigTests.swift */; };
 		C6EEAF340398C96BF430EB69 /* TerminalRenderer in Frameworks */ = {isa = PBXBuildFile; productRef = 2C28404CB3B58AC574166D8B /* TerminalRenderer */; };
 		C91B40B0700DC672F7EFE9CC /* TerminalCore in Frameworks */ = {isa = PBXBuildFile; productRef = 27FB322122036D177F0C8D98 /* TerminalCore */; };
 		D10A13DC68BEFB276591FD6D /* DirtyRegionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1814517847DF1C4ED550D0FA /* DirtyRegionTests.swift */; };
 		D19826E7829FA0C4E929BB50 /* ScreenBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17478702FCFDD47EB71C6438 /* ScreenBufferTests.swift */; };
 		D4A47AEA205E5F83A4D762B9 /* Configuration in Frameworks */ = {isa = PBXBuildFile; productRef = 9B35BB0426CD792873BC7ED0 /* Configuration */; };
+		D8A56C51C23665D39DCA1A17 /* DefaultTerminalPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A02C9E920BEA3CBD24139B5 /* DefaultTerminalPipelineTests.swift */; };
 		E290BBD41BFF9B71C5017E9C /* FontMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375B6A495018E75A911A2274 /* FontMetricsTests.swift */; };
+		E3DCF2824C65061969593B1C /* PTYKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6A030EF358AED994ACC52E6 /* PTYKit */; };
 		F50541BE4EE124CA1BD78F87 /* TerminalRenderer in Frameworks */ = {isa = PBXBuildFile; productRef = 3F8AA1C4B389BF3583D79013 /* TerminalRenderer */; };
 		F72D472D39B07D931DA10959 /* TerminalPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAA0646281DACF3EB30FF48 /* TerminalPipelineTests.swift */; };
 		F7F7ADC0B87E389E77C9ABB6 /* TerminalCore in Frameworks */ = {isa = PBXBuildFile; productRef = FA829FF1272F3FB8B472B028 /* TerminalCore */; };
@@ -51,6 +58,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		017C2CC1EC94AA174F1805D2 /* InputHandlerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputHandlerTests.swift; sourceTree = "<group>"; };
 		0BC61C7828E2F1B32D40BCF7 /* PerformanceBaselineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceBaselineTests.swift; sourceTree = "<group>"; };
 		17478702FCFDD47EB71C6438 /* ScreenBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenBufferTests.swift; sourceTree = "<group>"; };
 		1814517847DF1C4ED550D0FA /* DirtyRegionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirtyRegionTests.swift; sourceTree = "<group>"; };
@@ -63,8 +71,10 @@
 		375B6A495018E75A911A2274 /* FontMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FontMetricsTests.swift; sourceTree = "<group>"; };
 		39711194C5AC651AC58B506B /* PTYKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PTYKit; path = Packages/PTYKit; sourceTree = SOURCE_ROOT; };
 		40153B918A4916510D9F76E7 /* TerminalRenderer */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TerminalRenderer; path = Packages/TerminalRenderer; sourceTree = SOURCE_ROOT; };
+		4A02C9E920BEA3CBD24139B5 /* DefaultTerminalPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultTerminalPipelineTests.swift; sourceTree = "<group>"; };
 		4EF75C88D874A8718737FD87 /* Logging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging.swift; sourceTree = "<group>"; };
 		54BF7E640B4C72873F00CB5B /* CoreTextRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTextRendererTests.swift; sourceTree = "<group>"; };
+		59604596664ADB686A790D70 /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
 		5B70FC7A7386BA6867B321BC /* HiTerms.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HiTerms.entitlements; sourceTree = "<group>"; };
 		67E8ED22E4414992AAA801AD /* CellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CellTests.swift; sourceTree = "<group>"; };
 		6C8A74707BF97A0DAFFF382D /* IntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -78,6 +88,7 @@
 		BC75532917AC2FDB1371ED01 /* PTYKitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PTYKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D75D8F209C328523683D3056 /* Configuration */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Configuration; path = Packages/Configuration; sourceTree = SOURCE_ROOT; };
 		DCFDE4583EF959979257352C /* HiTerms.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HiTerms.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F913ABA6A41041097ED1EBB5 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		FAC42E06E871D0CFCDDE1082 /* OSLogVerificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OSLogVerificationTests.swift; sourceTree = "<group>"; };
 		FED64030EB3DF631EC3DD281 /* TerminalUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TerminalUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -145,6 +156,9 @@
 			files = (
 				36B1B863141341CFC164892E /* TerminalUI in Frameworks */,
 				7C193321EF6516B0AA3DA344 /* Configuration in Frameworks */,
+				2873F7E203F41536D95FA923 /* TerminalCore in Frameworks */,
+				54303F9D411519473B8C432F /* TerminalRenderer in Frameworks */,
+				E3DCF2824C65061969593B1C /* PTYKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -158,6 +172,7 @@
 				5B70FC7A7386BA6867B321BC /* HiTerms.entitlements */,
 				19D351C12A79A81934B331EF /* Info.plist */,
 				4EF75C88D874A8718737FD87 /* Logging.swift */,
+				F913ABA6A41041097ED1EBB5 /* main.swift */,
 			);
 			path = HiTermsApp;
 			sourceTree = "<group>";
@@ -199,6 +214,8 @@
 		77CEEBB03789B0BD0FC053F1 /* TerminalUITests */ = {
 			isa = PBXGroup;
 			children = (
+				4A02C9E920BEA3CBD24139B5 /* DefaultTerminalPipelineTests.swift */,
+				017C2CC1EC94AA174F1805D2 /* InputHandlerTests.swift */,
 				2AAA0646281DACF3EB30FF48 /* TerminalPipelineTests.swift */,
 			);
 			name = TerminalUITests;
@@ -234,6 +251,7 @@
 			children = (
 				67E8ED22E4414992AAA801AD /* CellTests.swift */,
 				17478702FCFDD47EB71C6438 /* ScreenBufferTests.swift */,
+				59604596664ADB686A790D70 /* SessionTests.swift */,
 				2DE7780ED200E823155765FB /* SwiftTermAdapterTests.swift */,
 			);
 			name = TerminalCoreTests;
@@ -282,6 +300,9 @@
 			packageProductDependencies = (
 				95047662D3EC8CB2C293BA9F /* TerminalUI */,
 				BAE0AC57EE0A9F658752C20E /* Configuration */,
+				89E1D18015E1E5EAF11605F3 /* TerminalCore */,
+				B274D755F436F4B9CA39A13F /* TerminalRenderer */,
+				D6A030EF358AED994ACC52E6 /* PTYKit */,
 			);
 			productName = HiTerms;
 			productReference = DCFDE4583EF959979257352C /* HiTerms.app */;
@@ -475,6 +496,7 @@
 			files = (
 				58FBB9533A9C168E99168C71 /* CellTests.swift in Sources */,
 				D19826E7829FA0C4E929BB50 /* ScreenBufferTests.swift in Sources */,
+				BA03BB47FC79344B4CA44BEE /* SessionTests.swift in Sources */,
 				FF413DF9331D2DD92ED3C6B5 /* SwiftTermAdapterTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -501,6 +523,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D8A56C51C23665D39DCA1A17 /* DefaultTerminalPipelineTests.swift in Sources */,
+				93E9832B95140D714E5CD965 /* InputHandlerTests.swift in Sources */,
 				F72D472D39B07D931DA10959 /* TerminalPipelineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -511,6 +535,7 @@
 			files = (
 				1E58A1AAB6AC1B87572F4536 /* AppDelegate.swift in Sources */,
 				FBBB1F8C20E080B328DCFFFB /* Logging.swift in Sources */,
+				484CBAD2C5F8BFEA2262FE3A /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1039,6 +1064,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = TerminalUI;
 		};
+		89E1D18015E1E5EAF11605F3 /* TerminalCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TerminalCore;
+		};
 		95047662D3EC8CB2C293BA9F /* TerminalUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = TerminalUI;
@@ -1055,11 +1084,19 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = PTYKit;
 		};
+		B274D755F436F4B9CA39A13F /* TerminalRenderer */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TerminalRenderer;
+		};
 		BAE0AC57EE0A9F658752C20E /* Configuration */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Configuration;
 		};
 		CA71C6ACA239DE7441EA5668 /* PTYKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PTYKit;
+		};
+		D6A030EF358AED994ACC52E6 /* PTYKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PTYKit;
 		};

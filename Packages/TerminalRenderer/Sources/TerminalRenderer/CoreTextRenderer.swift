@@ -178,57 +178,79 @@ public final class CoreTextRenderer: TerminalRendering {
         var col = 0
         while col < buffer.cols {
             let cell = buffer[row, col]
+
+            // Skip continuation cells (second cell of a wide character)
+            if cell.width == 0 {
+                col += 1
+                continue
+            }
+
             // Skip empty/space cells with default attributes
             if cell.character == " " && cell.attributes == .default {
                 col += 1
                 continue
             }
 
-            // Find run of consecutive cells with the same attributes
+            // Find run of consecutive non-continuation cells with the same attributes
             let startCol = col
             let runAttrs = cell.attributes
-            var chars: [Character] = []
-            while col < buffer.cols && buffer[row, col].attributes == runAttrs {
-                chars.append(buffer[row, col].character)
+            var charEntries: [(character: Character, col: Int)] = []
+
+            while col < buffer.cols {
+                let c = buffer[row, col]
+                // Skip continuation cells within the run
+                if c.width == 0 {
+                    col += 1
+                    continue
+                }
+                guard c.attributes == runAttrs else { break }
+                charEntries.append((character: c.character, col: col))
                 col += 1
             }
 
-            // Skip runs that are all spaces with default bg
-            let text = String(chars)
-            if text.allSatisfy({ $0 == " " }) && runAttrs.foregroundColor == .default && !runAttrs.underline && !runAttrs.strikethrough {
+            // Skip runs that are all spaces with default fg and no decorations
+            if charEntries.allSatisfy({ $0.character == " " }) && runAttrs.foregroundColor == .default && !runAttrs.underline && !runAttrs.strikethrough {
                 continue
             }
 
             guard !runAttrs.invisible else { continue }
 
+            // Draw each character at its grid-aligned position to avoid glyph advance drift
             let ctAttrs = ctAttributes(from: runAttrs)
-            let attrString = NSAttributedString(string: text, attributes: ctAttrs)
-            let line = CTLineCreateWithAttributedString(attrString)
-
-            let x = CGFloat(startCol) * fontMetrics.cellWidth
             context.saveGState()
-            context.textPosition = CGPoint(x: x, y: y + fontMetrics.baseline)
-            CTLineDraw(line, context)
 
-            // Draw underline
+            for entry in charEntries {
+                let charStr = String(entry.character)
+                let attrString = NSAttributedString(string: charStr, attributes: ctAttrs)
+                let line = CTLineCreateWithAttributedString(attrString)
+                let x = CGFloat(entry.col) * fontMetrics.cellWidth
+                context.textPosition = CGPoint(x: x, y: y + fontMetrics.baseline)
+                CTLineDraw(line, context)
+            }
+
+            // Draw underline across the full run span
             if runAttrs.underline {
                 let fgColor = effectiveForegroundColor(from: runAttrs)
                 context.setStrokeColor(nsColor(from: fgColor, isForeground: true).cgColor)
                 context.setLineWidth(1.0)
                 let underlineY = y + 1.0
-                context.move(to: CGPoint(x: x, y: underlineY))
-                context.addLine(to: CGPoint(x: x + CGFloat(chars.count) * fontMetrics.cellWidth, y: underlineY))
+                let runStartX = CGFloat(startCol) * fontMetrics.cellWidth
+                let runEndX = CGFloat(col) * fontMetrics.cellWidth
+                context.move(to: CGPoint(x: runStartX, y: underlineY))
+                context.addLine(to: CGPoint(x: runEndX, y: underlineY))
                 context.strokePath()
             }
 
-            // Draw strikethrough
+            // Draw strikethrough across the full run span
             if runAttrs.strikethrough {
                 let fgColor = effectiveForegroundColor(from: runAttrs)
                 context.setStrokeColor(nsColor(from: fgColor, isForeground: true).cgColor)
                 context.setLineWidth(1.0)
                 let strikeY = y + fontMetrics.cellHeight / 2.0
-                context.move(to: CGPoint(x: x, y: strikeY))
-                context.addLine(to: CGPoint(x: x + CGFloat(chars.count) * fontMetrics.cellWidth, y: strikeY))
+                let runStartX = CGFloat(startCol) * fontMetrics.cellWidth
+                let runEndX = CGFloat(col) * fontMetrics.cellWidth
+                context.move(to: CGPoint(x: runStartX, y: strikeY))
+                context.addLine(to: CGPoint(x: runEndX, y: strikeY))
                 context.strokePath()
             }
 

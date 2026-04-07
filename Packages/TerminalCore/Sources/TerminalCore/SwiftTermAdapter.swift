@@ -43,7 +43,8 @@ public final class SwiftTermAdapter: TerminalParser {
         let cd = line[col]
         return Cell(
             character: cd.getCharacter(),
-            attributes: mapAttributes(cd.attribute)
+            attributes: mapAttributes(cd.attribute),
+            width: cd.width
         )
     }
 
@@ -104,7 +105,8 @@ public final class SwiftTermAdapter: TerminalParser {
                 let cd = line[col]
                 rowCells.append(Cell(
                     character: cd.getCharacter(),
-                    attributes: mapAttributes(cd.attribute)
+                    attributes: mapAttributes(cd.attribute),
+                    width: cd.width
                 ))
             } else {
                 rowCells.append(.empty)

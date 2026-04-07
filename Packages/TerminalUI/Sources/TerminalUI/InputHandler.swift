@@ -78,6 +78,12 @@ public final class InputHandler {
         return sequence.data(using: .utf8)
     }
 
+    /// Returns terminal data for special keys (arrows, function keys, etc.).
+    /// Returns nil for normal character keys.
+    public func specialKeyData(for keyCode: UInt16) -> Data? {
+        handleSpecialKey(keyCode: keyCode)
+    }
+
     // MARK: - Private
 
     /// Maps special keyCodes to terminal escape sequences.

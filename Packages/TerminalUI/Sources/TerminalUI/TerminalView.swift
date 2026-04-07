@@ -24,6 +24,10 @@ public final class TerminalView: NSView {
     /// Concrete pipeline for accessing renderCoordinator/dirtyRegion/adapter.
     private let pipeline: DefaultTerminalPipeline
 
+    // MARK: - IME
+
+    private var _markedText: String?
+
     // MARK: - Scrollback
 
     private var scrollbackOffset: Int = 0
@@ -80,19 +84,69 @@ public final class TerminalView: NSView {
     // MARK: - Keyboard Events
 
     public override func keyDown(with event: NSEvent) {
-        guard let data = inputHandler.handleKeyDown(event) else { return }
-        session?.write(data: data)
+        let flags = event.modifierFlags
 
-        // If user types while scrolled back, snap to bottom
-        if scrollbackOffset > 0 {
-            scrollbackOffset = 0
-            pipeline.scrollbackOffset = 0
-            markAllRowsDirty()
+        // Cmd combinations: handle paste, ignore the rest (reserved for app shortcuts)
+        if flags.contains(.command) {
+            if let chars = event.charactersIgnoringModifiers, chars == "v" {
+                paste(nil)
+            }
+            return
         }
+
+        // Ctrl combinations bypass IME — send directly to PTY
+        if flags.contains(.control) {
+            if let data = inputHandler.handleKeyDown(event) {
+                session?.write(data: data)
+                snapToBottomIfScrolled()
+            }
+            return
+        }
+
+        // Special keys (arrows, function keys, etc.) bypass IME
+        if let data = inputHandler.specialKeyData(for: event.keyCode) {
+            session?.write(data: data)
+            snapToBottomIfScrolled()
+            return
+        }
+
+        // Normal character input: route through input method system
+        // This calls insertText(_:replacementRange:) via NSTextInputClient
+        interpretKeyEvents([event])
     }
 
     public override func flagsChanged(with event: NSEvent) {
         inputHandler.updateModifiers(event.modifierFlags)
+    }
+
+    // MARK: - Paste
+
+    @objc public override func paste(_ sender: Any?) {
+        guard let string = NSPasteboard.general.string(forType: .string) else { return }
+        guard let data = string.data(using: .utf8) else { return }
+
+        if pipeline.adapter.terminal.bracketedPasteMode {
+            let prefix = Data("\u{1B}[200~".utf8)
+            let suffix = Data("\u{1B}[201~".utf8)
+            session?.write(data: prefix + data + suffix)
+        } else {
+            session?.write(data: data)
+        }
+
+        snapToBottomIfScrolled()
+    }
+
+    @objc public override func doCommand(by selector: Selector) {
+        // Safety net for keys not caught by specialKeyData (e.g., numpad Enter)
+        if selector == #selector(insertNewline(_:)) || selector == #selector(insertNewlineIgnoringFieldEditor(_:)) {
+            session?.write(data: Data([0x0D]))
+        } else if selector == #selector(insertTab(_:)) {
+            session?.write(data: Data([0x09]))
+        } else if selector == #selector(deleteBackward(_:)) {
+            session?.write(data: Data([0x7F]))
+        } else if selector == #selector(cancelOperation(_:)) {
+            session?.write(data: Data([0x1B]))
+        }
     }
 
     // MARK: - Mouse Events
@@ -144,6 +198,14 @@ public final class TerminalView: NSView {
 
     // MARK: - Private
 
+    private func snapToBottomIfScrolled() {
+        if scrollbackOffset > 0 {
+            scrollbackOffset = 0
+            pipeline.scrollbackOffset = 0
+            markAllRowsDirty()
+        }
+    }
+
     /// Marks all rows dirty to trigger a full redraw (used for scrollback changes).
     private func markAllRowsDirty() {
         let rows = pipeline.screenBuffer.rows
@@ -155,5 +217,78 @@ public final class TerminalView: NSView {
 
     deinit {
         pipeline.renderCoordinator.stopDisplayLink()
+    }
+}
+
+// MARK: - NSTextInputClient
+
+extension TerminalView: NSTextInputClient {
+
+    public func insertText(_ string: Any, replacementRange: NSRange) {
+        let text: String
+        if let s = string as? String {
+            text = s
+        } else if let s = string as? NSAttributedString {
+            text = s.string
+        } else {
+            return
+        }
+        guard let data = text.data(using: .utf8) else { return }
+        session?.write(data: data)
+        snapToBottomIfScrolled()
+    }
+
+    public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        if let s = string as? String {
+            _markedText = s
+        } else if let s = string as? NSAttributedString {
+            _markedText = s.string
+        }
+    }
+
+    public func unmarkText() {
+        _markedText = nil
+    }
+
+    public func selectedRange() -> NSRange {
+        NSRange(location: NSNotFound, length: 0)
+    }
+
+    public func markedRange() -> NSRange {
+        if let text = _markedText, !text.isEmpty {
+            return NSRange(location: 0, length: text.utf16.count)
+        }
+        return NSRange(location: NSNotFound, length: 0)
+    }
+
+    public func hasMarkedText() -> Bool {
+        _markedText != nil && !(_markedText?.isEmpty ?? true)
+    }
+
+    public func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
+        nil
+    }
+
+    public func validAttributesForMarkedText() -> [NSAttributedString.Key] {
+        []
+    }
+
+    public func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
+        let cursorCol = snapshot.cursor.col
+        let cursorRow = snapshot.cursor.row
+
+        let x = CGFloat(cursorCol) * fontMetrics.cellWidth
+        let yInView = bounds.height - CGFloat(cursorRow + 1) * fontMetrics.cellHeight
+        let pointInView = NSPoint(x: x, y: yInView)
+        let pointInWindow = convert(pointInView, to: nil)
+        let pointOnScreen = window?.convertPoint(toScreen: pointInWindow) ?? .zero
+
+        return NSRect(x: pointOnScreen.x, y: pointOnScreen.y,
+                      width: fontMetrics.cellWidth, height: fontMetrics.cellHeight)
+    }
+
+    public func characterIndex(for point: NSPoint) -> Int {
+        0
     }
 }

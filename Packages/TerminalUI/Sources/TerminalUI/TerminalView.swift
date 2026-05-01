@@ -128,8 +128,15 @@ public final class TerminalView: NSView {
 
     // MARK: - Paste
 
-    @objc public override func paste(_ sender: Any?) {
+    @objc public func paste(_ sender: Any?) {
         guard let string = NSPasteboard.general.string(forType: .string) else { return }
+        applyPaste(string)
+    }
+
+    /// Sends the given string to the session, wrapping with bracketed-paste
+    /// markers if the terminal has enabled bracketed paste mode.
+    /// Internal so tests can drive paste without touching the system pasteboard.
+    func applyPaste(_ string: String) {
         guard let data = string.data(using: .utf8) else { return }
 
         if pipeline.adapter.terminal.bracketedPasteMode {

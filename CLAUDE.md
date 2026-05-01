@@ -49,28 +49,31 @@ The primary documentation language is Chinese (中文).
 
 ## Current State
 
-V0.0 engineering baseline complete. V0.1 (terminal kernel) in development — Phase A-E coding complete, Phase F (integration verification) pending macOS environment. The repo now has:
+V0.0 + V0.1 complete. V0.1 Phase A-F all done (commits `558d074` through `276f106`); B01-B12 all pass; CJK rendering + paste/IME shipped in commit `3171aab`. Baseline: **96 tests, 0 failures**. The repo has:
+
 - Xcode project (via XcodeGen `project.yml`) with HiTerms app target and 6 test targets
 - 5 SPM packages: TerminalCore, PTYKit, TerminalRenderer, TerminalUI, Configuration
 - SwiftTerm v1.13.0 adopted (Strategy B — SwiftTerm owns state, Hi-Terms reads cells)
-- SwiftTermAdapter with exitHandler, sendHandler, rangeChangedHandler, scrollback support
-- PTYProcess with forkpty + DispatchIO + exitHandler
-- CoreTextRenderer (ANSI 8-color, text attributes, cursor) + RenderCoordinator (CADisplayLink)
-- DefaultTerminalPipeline connecting PTY → Parser → DirtyRegion → RenderCoordinator
+- SwiftTermAdapter with exitHandler, sendHandler, rangeChangedHandler, scrollback support, color mapping (default/inverted/ansi256/trueColor)
+- PTYProcess: forkpty + DispatchIO + exitHandler + `resize(cols:rows:)` (TIOCSWINSZ + SIGWINCH)
+- CoreTextRenderer: text attributes + cursor; **only ANSI 8 color is rendered** — 256/True Color cases fall back to default (v0.2 gap)
+- DefaultTerminalPipeline connecting PTY → Parser → DirtyRegion → RenderCoordinator; `resize(cols:rows:)` wired to PTY + adapter
 - Session protocol + TerminalSession (pipeline injection) + SessionRegistry (GCD thread-safe)
 - InputHandler (keyboard mapping, Ctrl combos, SGR mouse reporting)
-- TerminalView (NSView + CALayer, keyboard/mouse/scroll events)
+- TerminalView (NSView + CALayer): keyboard/mouse/scroll, NSTextInputClient (IME), bracketed-paste-mode-aware paste; **does NOT yet propagate window resize to Pipeline.resize**
 - TerminalWindowController (font-metrics-driven window sizing)
 - AppDelegate assembling full pipeline: PTY → Adapter → Pipeline → Session → Window
 - OSLog subsystems configured (com.hiterms.pty/terminal/renderer/ui/app)
-- 75+ tests across all modules (50 existing + 25+ new for pipeline/session/input)
-- DMG packaging script, vttest automation framework, performance baseline tooling
-- `Tools/verify-acceptance.sh` for automated A01-A11 verification
-- V0.1 technical design (16 sections, session foundation + rendering pipeline + input + threading)
-- V0.1 acceptance criteria (12 items B01-B12)
-- `Next2Do/` execution plan directory (SSOT for active planning, replaces docs/plans/)
+- DMG packaging, vttest automation, performance baseline tooling
+- `Tools/verify-acceptance.sh` (A01-A11) and `Tools/verify-v0.1.sh` for automated verification
 
-Current step: v0.1 Phase C-E coding complete. Next: Phase F verification on macOS (make build, make test, manual B02-B12 acceptance). See `Next2Do/v0.1-execution.md` for task status.
+**Current step:** entering v0.2 (Roadmap §2.2). The next focus is the three highest-value gaps for AI CLI stability + Terminal/iTerm parity, all under v0.2 scope:
+
+1. **True Color + 256 color rendering** — extend `CoreTextRenderer.nsColor` to handle `.ansi256` (full 256-color palette: 16 system + 6×6×6 cube + 24 grayscale) and `.trueColor` (24-bit RGB). The Cell/Adapter pipeline already carries the values; only the final NSColor mapping is missing. Critical for AI CLI output (codex, Claude Code emit syntax-highlighted code in 24-bit color).
+2. **Window resize → SIGWINCH** — `TerminalView` must observe its frame size changes (`setFrameSize` / `viewDidEndLiveResize`), compute new cols/rows from `fontMetrics`, and call `pipeline.resize(cols:rows:)`. Lower layers are ready; only the UI hook is missing. Essential for TUI apps (vim, top, codex) to redraw correctly after window resize.
+3. **Alternate Screen Buffer + Bracketed Paste test coverage** — bracketed paste was implemented in `3171aab` without tests; alt screen is SwiftTerm-native but unverified end-to-end. Add unit + integration coverage for both.
+
+See `Next2Do/v0.2-blueprint.md` for the full v0.2 scope and `Next2Do/risks-and-decisions.md` for cross-version risks.
 
 ## Development Workflow
 

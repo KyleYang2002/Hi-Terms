@@ -32,6 +32,13 @@ public final class TerminalView: NSView {
 
     private var scrollbackOffset: Int = 0
 
+    // MARK: - Resize
+
+    /// Last grid dimensions pushed to the pipeline. Used to dedupe setFrameSize
+    /// calls during live resize: only crossing an integer row/col boundary
+    /// triggers a real PTY resize.
+    private var lastGridSize: (cols: Int, rows: Int) = (0, 0)
+
     // MARK: - Init
 
     /// Creates a terminal view wired to the given session and pipeline.
@@ -196,6 +203,35 @@ public final class TerminalView: NSView {
         return (col: col, row: row)
     }
 
+    // MARK: - Resize
+
+    /// Computes the grid dimensions (cols, rows) that fit the given pixel size.
+    public static func gridSize(for size: NSSize, fontMetrics: FontMetrics) -> (cols: Int, rows: Int) {
+        let cols = max(1, Int(size.width / fontMetrics.cellWidth))
+        let rows = max(1, Int(size.height / fontMetrics.cellHeight))
+        return (cols: cols, rows: rows)
+    }
+
+    public override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        applyResize(for: newSize)
+    }
+
+    /// Computes the new grid dimensions and forwards them to the pipeline.
+    /// Called from setFrameSize on every frame change, but dedupes on
+    /// (cols, rows) so PTY/SwiftTerm only see actual grid changes.
+    /// Made internal to allow direct testing without an NSWindow.
+    func applyResize(for size: NSSize) {
+        let (cols, rows) = Self.gridSize(for: size, fontMetrics: fontMetrics)
+        guard (cols, rows) != lastGridSize else { return }
+        lastGridSize = (cols, rows)
+
+        pipeline.resize(cols: cols, rows: rows)
+
+        // After resize, the entire grid may need to repaint.
+        markAllRowsDirty()
+    }
+
     // MARK: - Private
 
     private func snapToBottomIfScrolled() {
@@ -206,12 +242,12 @@ public final class TerminalView: NSView {
         }
     }
 
-    /// Marks all rows dirty to trigger a full redraw (used for scrollback changes).
+    /// Marks all rows dirty to trigger a full redraw (used for scrollback changes
+    /// and after resize). Reads the actual row count from the live adapter snapshot
+    /// so the value stays correct after grid resizes.
     private func markAllRowsDirty() {
-        let rows = pipeline.screenBuffer.rows
-        pipeline.dirtyRegion.merge(rows: 0..<rows)
-        // Submit a new snapshot with the current scrollback offset
         let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
+        pipeline.dirtyRegion.merge(rows: 0..<snapshot.rows)
         pipeline.renderCoordinator.submitSnapshot(snapshot)
     }
 

@@ -82,6 +82,36 @@ final class PTYProcessTests: XCTestCase {
                       "TERM should be xterm-256color, got: '\(text)'")
     }
 
+    func testResizePropagatesViaTIOCSWINSZ() async throws {
+        // Spawn a shell, resize the PTY, and verify `stty size` reports new dims.
+        let config = PTYConfiguration(
+            shellPath: "/bin/sh",
+            arguments: ["-c", "sleep 0.3 && stty size && exit"],
+            environment: [:],
+            initialWindowSize: (cols: 80, rows: 25)
+        )
+        let process = try PTYProcess(configuration: config)
+
+        // Resize before stty runs (sleep gives forked shell time to settle).
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        process.resize(cols: 132, rows: 40)
+
+        var output = Data()
+        let stream = process.read()
+        let deadline = Date().addingTimeInterval(5)
+
+        for await chunk in stream {
+            output.append(chunk)
+            if Date() > deadline { break }
+            let text = String(data: output, encoding: .utf8) ?? ""
+            if text.contains("40 132") { break }
+        }
+
+        let text = String(data: output, encoding: .utf8) ?? ""
+        XCTAssertTrue(text.contains("40 132"),
+                      "stty size should report '40 132' after resize, got: '\(text)'")
+    }
+
     func testPTYErrorDescriptions() {
         let errors: [(PTYError, String)] = [
             (.forkFailed(errno: ENOMEM), "forkpty"),

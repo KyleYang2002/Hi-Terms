@@ -224,54 +224,75 @@ final class InputHandlerTests: XCTestCase {
 
     // MARK: - Mouse Events
 
-    func testMousePressEncodesCorrectly() {
-        let event = NSEvent.mouseEvent(
-            with: .leftMouseDown,
-            location: .zero,
-            modifierFlags: [],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            eventNumber: 0,
-            clickCount: 1,
-            pressure: 1.0
-        )!
-        let data = handler.handleMouseEvent(event, type: .press, col: 5, row: 10)
+    // Tests use `encodeMouseReport(type:pressButtonNumber:col:row:)` directly
+    // because synthetic `NSEvent.mouseEvent` always reports `buttonNumber == 0`
+    // regardless of the event type — making it impossible to exercise the
+    // right/middle button paths through the NSEvent shim.
+
+    func testMousePressLeftEncodesAsZero() {
+        let data = handler.encodeMouseReport(type: .press, pressButtonNumber: 0, col: 5, row: 10)
         // ESC [ < 0 ; 6 ; 11 M  (1-based coordinates)
         XCTAssertEqual(data, "\u{1B}[<0;6;11M".data(using: .utf8))
     }
 
-    func testMouseReleaseEncodesCorrectly() {
-        let event = NSEvent.mouseEvent(
-            with: .leftMouseUp,
-            location: .zero,
-            modifierFlags: [],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            eventNumber: 0,
-            clickCount: 1,
-            pressure: 0.0
-        )!
-        let data = handler.handleMouseEvent(event, type: .release, col: 5, row: 10)
-        // Release uses 'm' suffix
+    func testMousePressRightMapsToTwo() {
+        let data = handler.encodeMouseReport(type: .press, pressButtonNumber: 1, col: 5, row: 10)
+        XCTAssertEqual(data, "\u{1B}[<2;6;11M".data(using: .utf8))
+    }
+
+    func testMousePressMiddleMapsToOne() {
+        let data = handler.encodeMouseReport(type: .press, pressButtonNumber: 2, col: 5, row: 10)
+        XCTAssertEqual(data, "\u{1B}[<1;6;11M".data(using: .utf8))
+    }
+
+    func testMousePressUnknownButtonReturnsNil() {
+        let data = handler.encodeMouseReport(type: .press, pressButtonNumber: 7, col: 5, row: 10)
+        XCTAssertNil(data, "unmapped buttons should be dropped, not encoded")
+    }
+
+    func testMouseReleaseUsesPressedButtonId() {
+        // Right press → release must encode the same id (2), not fall back to 0.
+        _ = handler.encodeMouseReport(type: .press, pressButtonNumber: 1, col: 5, row: 10)
+
+        let data = handler.encodeMouseReport(type: .release, col: 5, row: 10)
+        XCTAssertEqual(data, "\u{1B}[<2;6;11m".data(using: .utf8),
+                       "release must encode the button id from the matching press")
+    }
+
+    func testMouseReleaseWithoutPriorPressFallsBackToZero() {
+        // Defensive: if release arrives without a tracked press (e.g. focus
+        // changed mid-drag), encode 0 rather than dropping the event.
+        let data = handler.encodeMouseReport(type: .release, col: 5, row: 10)
         XCTAssertEqual(data, "\u{1B}[<0;6;11m".data(using: .utf8))
     }
 
-    func testMouseMoveEncodesCorrectly() {
-        let event = NSEvent.mouseEvent(
-            with: .mouseMoved,
-            location: .zero,
-            modifierFlags: [],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            eventNumber: 0,
-            clickCount: 0,
-            pressure: 0.0
-        )!
-        let data = handler.handleMouseEvent(event, type: .move, col: 3, row: 7)
-        // Move uses button 35
+    func testMouseReleaseClearsPressedButton() {
+        _ = handler.encodeMouseReport(type: .press, pressButtonNumber: 1, col: 0, row: 0)
+        _ = handler.encodeMouseReport(type: .release, col: 0, row: 0)
+
+        // Second release with no press in between should fall back to 0.
+        let data = handler.encodeMouseReport(type: .release, col: 5, row: 10)
+        XCTAssertEqual(data, "\u{1B}[<0;6;11m".data(using: .utf8),
+                       "release must clear the tracked button so a stale id isn't reused")
+    }
+
+    func testMouseDragLeftEncodesButtonPlus32() {
+        _ = handler.encodeMouseReport(type: .press, pressButtonNumber: 0, col: 0, row: 0)
+        let data = handler.encodeMouseReport(type: .drag, col: 3, row: 7)
+        // 0 (left) + 32 = 32
+        XCTAssertEqual(data, "\u{1B}[<32;4;8M".data(using: .utf8))
+    }
+
+    func testMouseDragRightEncodesButtonPlus32() {
+        _ = handler.encodeMouseReport(type: .press, pressButtonNumber: 1, col: 0, row: 0)
+        let data = handler.encodeMouseReport(type: .drag, col: 3, row: 7)
+        // 2 (right) + 32 = 34
+        XCTAssertEqual(data, "\u{1B}[<34;4;8M".data(using: .utf8))
+    }
+
+    func testMouseMoveEncodesAs35() {
+        let data = handler.encodeMouseReport(type: .move, col: 3, row: 7)
+        // No-button motion: 3 + 32 = 35.
         XCTAssertEqual(data, "\u{1B}[<35;4;8M".data(using: .utf8))
     }
 }

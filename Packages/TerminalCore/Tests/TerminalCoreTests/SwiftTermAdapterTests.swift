@@ -151,6 +151,52 @@ final class SwiftTermAdapterTests: XCTestCase {
                        "DECRST 2004 (l) should disable bracketed paste mode")
     }
 
+    // MARK: - Cursor style (DECSCUSR)
+
+    func testDefaultCursorStyleIsBlinkingBlock() {
+        // SwiftTerm's TerminalOptions defaults to `.blinkBlock`. The adapter
+        // must surface that on every fresh snapshot so the renderer attaches
+        // the blink animation without any extra setup.
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        let snapshot = adapter.createSnapshot()
+        XCTAssertEqual(snapshot.cursor.style, .blinkingBlock)
+    }
+
+    func testDECSCUSRSteadyBlock() {
+        // CSI 2 SP q  →  steady block (no blink)
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        adapter.parse(data: "\u{1B}[2 q".data(using: .utf8)!)
+        XCTAssertEqual(adapter.createSnapshot().cursor.style, .block)
+    }
+
+    func testDECSCUSRBlinkUnderline() {
+        // CSI 3 SP q  →  blinking underline
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        adapter.parse(data: "\u{1B}[3 q".data(using: .utf8)!)
+        XCTAssertEqual(adapter.createSnapshot().cursor.style, .blinkingUnderline)
+    }
+
+    func testDECSCUSRSteadyBar() {
+        // CSI 6 SP q  →  steady bar
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        adapter.parse(data: "\u{1B}[6 q".data(using: .utf8)!)
+        XCTAssertEqual(adapter.createSnapshot().cursor.style, .bar)
+    }
+
+    func testDECSCUSRTriggersRangeChanged() {
+        // A bare DECSCUSR sequence emits no glyphs, so without an explicit
+        // rangeChanged hook the cursor row would never repaint at the new
+        // style. The adapter must mark the cursor's row dirty.
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        var changes: [(Int, Int)] = []
+        adapter.rangeChangedHandler = { changes.append(($0, $1)) }
+
+        adapter.parse(data: "\u{1B}[2 q".data(using: .utf8)!)
+
+        XCTAssertFalse(changes.isEmpty,
+                       "DECSCUSR must trigger a rangeChanged callback so the renderer redraws")
+    }
+
     // MARK: - Alternate Screen Buffer (DECSET 1049)
 
     func testAlternateBufferDefaultOff() {

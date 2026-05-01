@@ -39,6 +39,13 @@ public final class TerminalView: NSView {
     /// triggers a real PTY resize.
     private var lastGridSize: (cols: Int, rows: Int) = (0, 0)
 
+    // MARK: - Tracking
+
+    /// The tracking area that lets AppKit deliver `mouseMoved` (no button held)
+    /// to this view. Required for `mouseMode == .anyEvent`. Reinstalled by
+    /// `updateTrackingAreas()` whenever the view's bounds change.
+    private var mouseTrackingArea: NSTrackingArea?
+
     // MARK: - Init
 
     /// Creates a terminal view wired to the given session and pipeline.
@@ -74,6 +81,35 @@ public final class TerminalView: NSView {
         wantsLayer = true
         guard let rootLayer = layer else { return }
         rootLayer.backgroundColor = NSColor.textBackgroundColor.cgColor
+        syncBackingScale()
+    }
+
+    /// Mirrors the host window's `backingScaleFactor` onto the root layer so the
+    /// renderer can derive a matching bitmap density. Called on init, when the
+    /// view attaches to a window, and on `viewDidChangeBackingProperties` (e.g.
+    /// after dragging the window between Retina and non-Retina displays).
+    private func syncBackingScale() {
+        guard let rootLayer = layer else { return }
+        let scale = window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2.0
+        if rootLayer.contentsScale != scale {
+            rootLayer.contentsScale = scale
+        }
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncBackingScale()
+        markAllRowsDirty()
+    }
+
+    public override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        syncBackingScale()
+        // Force a full redraw so the bitmap context gets rebuilt at the new
+        // pixel density on the next display-link tick.
+        markAllRowsDirty()
     }
 
     /// Connects the RenderCoordinator to this view's layer and starts the display link.
@@ -164,29 +200,74 @@ public final class TerminalView: NSView {
     }
 
     // MARK: - Mouse Events
+    //
+    // Mouse reporting is gated by SwiftTerm's `mouseMode`:
+    //   - .off  — nothing is reported (a normal shell prompt sees no input).
+    //   - .x10  — press only; release/drag/move suppressed.
+    //   - .vt200 — press + release.
+    //   - .buttonEventTracking — press + release + drag (motion-while-pressed).
+    //   - .anyEvent — press + release + drag + move (motion regardless of button).
+    //
+    // Without this gating, every click in a non-mouse-aware shell gets echoed
+    // back as garbled SGR parameters (see refs/22.png).
 
     public override func mouseDown(with event: NSEvent) {
-        let (col, row) = terminalCoordinate(for: event)
-        guard let data = inputHandler.handleMouseEvent(event, type: .press, col: col, row: row) else {
-            return
-        }
-        session?.write(data: data)
+        guard shouldReportPress() else { return }
+        sendMouse(event: event, type: .press)
     }
 
     public override func mouseUp(with event: NSEvent) {
+        guard shouldReportRelease() else { return }
+        sendMouse(event: event, type: .release)
+    }
+
+    public override func mouseDragged(with event: NSEvent) {
+        guard shouldReportDrag() else { return }
+        sendMouse(event: event, type: .drag)
+    }
+
+    public override func mouseMoved(with event: NSEvent) {
+        guard shouldReportMove() else { return }
+        sendMouse(event: event, type: .move)
+    }
+
+    private func sendMouse(event: NSEvent, type: MouseEventType) {
         let (col, row) = terminalCoordinate(for: event)
-        guard let data = inputHandler.handleMouseEvent(event, type: .release, col: col, row: row) else {
+        guard let data = inputHandler.handleMouseEvent(event, type: type, col: col, row: row) else {
             return
         }
         session?.write(data: data)
     }
 
-    public override func mouseMoved(with event: NSEvent) {
-        let (col, row) = terminalCoordinate(for: event)
-        guard let data = inputHandler.handleMouseEvent(event, type: .move, col: col, row: row) else {
-            return
+    private func currentMouseMode() -> MouseReportingMode {
+        pipeline.adapter.mouseReportingMode
+    }
+
+    private func shouldReportPress() -> Bool {
+        switch currentMouseMode() {
+        case .off: return false
+        case .x10, .vt200, .buttonEventTracking, .anyEvent: return true
         }
-        session?.write(data: data)
+    }
+
+    private func shouldReportRelease() -> Bool {
+        switch currentMouseMode() {
+        // x10 is press-only by definition; suppress release to avoid leaking
+        // bytes that the host wasn't expecting.
+        case .off, .x10: return false
+        case .vt200, .buttonEventTracking, .anyEvent: return true
+        }
+    }
+
+    private func shouldReportDrag() -> Bool {
+        switch currentMouseMode() {
+        case .buttonEventTracking, .anyEvent: return true
+        case .off, .x10, .vt200: return false
+        }
+    }
+
+    private func shouldReportMove() -> Bool {
+        currentMouseMode() == .anyEvent
     }
 
     // MARK: - Scroll
@@ -202,26 +283,51 @@ public final class TerminalView: NSView {
 
     /// Converts mouse pixel coordinates to terminal grid coordinates.
     /// NSView Y=0 is at bottom; terminal row 0 is at top — must invert Y.
+    /// Both axes subtract the content inset so the grid origin lines up with
+    /// the visible text origin.
     public func terminalCoordinate(for event: NSEvent) -> (col: Int, row: Int) {
         let point = convert(event.locationInWindow, from: nil)
-        let col = max(0, Int(point.x / fontMetrics.cellWidth))
-        // Invert Y: NSView bottom → terminal top
-        let row = max(0, Int((bounds.height - point.y) / fontMetrics.cellHeight))
+        let inset = TerminalLayout.contentInset
+        let localX = point.x - inset.width
+        let localY = (bounds.height - point.y) - inset.height
+        let col = max(0, Int(localX / fontMetrics.cellWidth))
+        let row = max(0, Int(localY / fontMetrics.cellHeight))
         return (col: col, row: row)
     }
 
     // MARK: - Resize
 
-    /// Computes the grid dimensions (cols, rows) that fit the given pixel size.
+    /// Computes the grid dimensions (cols, rows) that fit the given view frame
+    /// size. The view frame includes a `TerminalLayout.contentInset` margin on
+    /// each side, which is subtracted before dividing by the cell metrics.
     public static func gridSize(for size: NSSize, fontMetrics: FontMetrics) -> (cols: Int, rows: Int) {
-        let cols = max(1, Int(size.width / fontMetrics.cellWidth))
-        let rows = max(1, Int(size.height / fontMetrics.cellHeight))
+        let inset = TerminalLayout.contentInset
+        let usableWidth = max(0, size.width - 2 * inset.width)
+        let usableHeight = max(0, size.height - 2 * inset.height)
+        let cols = max(1, Int(usableWidth / fontMetrics.cellWidth))
+        let rows = max(1, Int(usableHeight / fontMetrics.cellHeight))
         return (cols: cols, rows: rows)
     }
 
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         applyResize(for: newSize)
+    }
+
+    public override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = mouseTrackingArea {
+            removeTrackingArea(existing)
+            mouseTrackingArea = nil
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeInKeyWindow, .mouseMoved, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        mouseTrackingArea = area
     }
 
     /// Computes the new grid dimensions and forwards them to the pipeline.
@@ -321,8 +427,9 @@ extension TerminalView: NSTextInputClient {
         let cursorCol = snapshot.cursor.col
         let cursorRow = snapshot.cursor.row
 
-        let x = CGFloat(cursorCol) * fontMetrics.cellWidth
-        let yInView = bounds.height - CGFloat(cursorRow + 1) * fontMetrics.cellHeight
+        let inset = TerminalLayout.contentInset
+        let x = inset.width + CGFloat(cursorCol) * fontMetrics.cellWidth
+        let yInView = bounds.height - inset.height - CGFloat(cursorRow + 1) * fontMetrics.cellHeight
         let pointInView = NSPoint(x: x, y: yInView)
         let pointInWindow = convert(pointInView, to: nil)
         let pointOnScreen = window?.convertPoint(toScreen: pointInWindow) ?? .zero

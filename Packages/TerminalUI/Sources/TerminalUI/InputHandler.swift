@@ -8,6 +8,11 @@ import Foundation
 public final class InputHandler {
     private var modifiers: NSEvent.ModifierFlags = []
 
+    /// Last button number passed in via `.press`. Used to fill in `release` and
+    /// `drag` SGR encodings, since NSEvent's `buttonNumber` is not always
+    /// reliable on `mouseUp`/`mouseDragged` and SGR requires the same button id.
+    private var lastPressedButton: Int?
+
     public init() {}
 
     // MARK: - Keyboard
@@ -45,30 +50,41 @@ public final class InputHandler {
 
     /// Encodes a mouse event as SGR mouse report: ESC [ < Cb ; Cx ; Cy M/m
     ///
+    /// `pressButtonNumber` is the NSEvent `buttonNumber` of the most recent
+    /// press; it's only consulted when `type == .press`. Release/drag reuse
+    /// the previously recorded press, and move encodes the no-button motion id.
+    ///
     /// - Parameters:
-    ///   - event: The NSEvent (used for button number).
-    ///   - type: Press, release, or move.
+    ///   - type: Press, release, drag, or move.
+    ///   - pressButtonNumber: NSEvent `buttonNumber` for press events; ignored
+    ///     for release/drag/move.
     ///   - col: Terminal column (0-based).
     ///   - row: Terminal row (0-based).
-    /// - Returns: SGR-encoded mouse report data, or nil if not reportable.
-    public func handleMouseEvent(
-        _ event: NSEvent,
+    /// - Returns: SGR-encoded mouse report data, or nil if the press button
+    ///   isn't one we map.
+    public func encodeMouseReport(
         type: MouseEventType,
+        pressButtonNumber: Int = 0,
         col: Int,
         row: Int
     ) -> Data? {
         let button: Int
         switch type {
         case .press:
-            switch event.buttonNumber {
-            case 0: button = 0   // Left
-            case 1: button = 2   // Right
-            case 2: button = 1   // Middle
-            default: return nil
-            }
+            guard let mapped = mapPressButton(pressButtonNumber) else { return nil }
+            button = mapped
+            lastPressedButton = mapped
         case .release:
-            button = 0
+            // SGR release ('m') still carries the original button id so the
+            // host can pair it with the matching press.
+            button = lastPressedButton ?? 0
+            lastPressedButton = nil
+        case .drag:
+            // xterm SGR: motion-while-pressed = button + 32.
+            let pressed = lastPressedButton ?? 0
+            button = pressed + 32
         case .move:
+            // No button held: motion event id is 3 + 32 = 35.
             button = 35
         }
 
@@ -76,6 +92,33 @@ public final class InputHandler {
         // SGR uses 1-based coordinates
         let sequence = "\u{1B}[<\(button);\(col + 1);\(row + 1)\(suffix)"
         return sequence.data(using: .utf8)
+    }
+
+    /// Convenience wrapper that pulls `buttonNumber` from the NSEvent. Used by
+    /// `TerminalView`; tests typically prefer `encodeMouseReport(type:...)`
+    /// because synthetic NSEvents always report `buttonNumber == 0`.
+    public func handleMouseEvent(
+        _ event: NSEvent,
+        type: MouseEventType,
+        col: Int,
+        row: Int
+    ) -> Data? {
+        encodeMouseReport(
+            type: type,
+            pressButtonNumber: event.buttonNumber,
+            col: col,
+            row: row
+        )
+    }
+
+    /// Maps an NSEvent `buttonNumber` to the SGR base button id.
+    private func mapPressButton(_ buttonNumber: Int) -> Int? {
+        switch buttonNumber {
+        case 0: return 0   // Left
+        case 1: return 2   // Right
+        case 2: return 1   // Middle
+        default: return nil
+        }
     }
 
     /// Returns terminal data for special keys (arrows, function keys, etc.).
@@ -132,5 +175,8 @@ public final class InputHandler {
 public enum MouseEventType {
     case press
     case release
+    /// Motion while a button is held (xterm: button + 32).
+    case drag
+    /// Motion with no button held (any-event mode only).
     case move
 }

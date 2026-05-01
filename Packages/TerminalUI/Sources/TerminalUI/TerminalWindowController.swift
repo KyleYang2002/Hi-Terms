@@ -18,12 +18,15 @@ public final class TerminalWindowController: NSWindowController {
     public init(session: any Session, pipeline: DefaultTerminalPipeline) {
         self.session = session
 
-        // Calculate window size from terminal dimensions and font metrics
+        // Calculate window size from terminal dimensions and font metrics,
+        // adding TerminalLayout.contentInset on each side so the grid does not
+        // touch the window's edges.
         let font = NSFont(name: "Menlo", size: 13)
             ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         let fontMetrics = FontMetrics.measure(font: font)
-        let contentWidth = CGFloat(pipeline.screenBuffer.cols) * fontMetrics.cellWidth
-        let contentHeight = CGFloat(pipeline.screenBuffer.rows) * fontMetrics.cellHeight
+        let inset = TerminalLayout.contentInset
+        let contentWidth = CGFloat(pipeline.screenBuffer.cols) * fontMetrics.cellWidth + 2 * inset.width
+        let contentHeight = CGFloat(pipeline.screenBuffer.rows) * fontMetrics.cellHeight + 2 * inset.height
         let contentRect = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
 
         let window = NSWindow(

@@ -18,8 +18,12 @@ public struct FontMetrics: Sendable {
     }
 
     /// Computes metrics for a given monospace font.
+    /// `cellWidth` is rounded up to the nearest integer point so that successive
+    /// columns land on integer pixel positions on a @1x display, avoiding
+    /// cumulative subpixel drift across long rows.
     public static func measure(font: NSFont) -> FontMetrics {
-        let cellWidth = font.advancement(forGlyph: NSGlyph(font.glyph(withName: "M"))).width
+        let rawAdvance = font.advancement(forGlyph: NSGlyph(font.glyph(withName: "M"))).width
+        let cellWidth = ceil(rawAdvance)
         let cellHeight = ceil(font.ascender - font.descender + font.leading)
         let baseline = ceil(-font.descender)
         return FontMetrics(
@@ -30,4 +34,11 @@ public struct FontMetrics: Sendable {
             fontSize: font.pointSize
         )
     }
+}
+
+/// Visual padding between the terminal grid and the surrounding view edges.
+/// Matches iTerm's default look-and-feel and prevents glyphs from touching the
+/// window border.
+public enum TerminalLayout {
+    public static let contentInset = CGSize(width: 2, height: 2)
 }

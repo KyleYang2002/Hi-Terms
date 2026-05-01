@@ -92,6 +92,22 @@
 
 ---
 
+### DEC-03: 鼠标上报必须按 SwiftTerm `mouseMode` 门控
+
+| 字段 | 内容 |
+|------|------|
+| **ID** | DEC-03 |
+| **日期** | 2026-05-01 |
+| **状态** | decided |
+| **上下文** | `refs/22.png`：在 zsh 提示符上左键点击会回显 `0;50;12M0;50;12m` 这样的 SGR 参数残骸。根因是 `TerminalView.mouseDown/mouseUp/mouseMoved` 无条件向 PTY 写 SGR 鼠标上报，没有看 SwiftTerm 的 `mouseMode` 状态——shell 未开启鼠标模式时把 ESC[< 当做未识别 CSI 消化掉，剩余可见字符回显成乱码 |
+| **选项** | (a) 仅在 `TerminalView` 里直接 `import SwiftTerm` 读 `terminal.mouseMode`<br/>(b) 在 `SwiftTermAdapter` 上暴露 Hi-Terms 自有的 `MouseReportingMode` 枚举映射，UI 层只依赖 TerminalCore<br/>(c) 把鼠标编码逻辑搬到 TerminalCore，UI 层只传事件 |
+| **决策** | 采用 (b)：`SwiftTermAdapter.mouseReportingMode` 暴露 Hi-Terms 自有的 `MouseReportingMode` 枚举；UI 在 `mouseDown/mouseUp/mouseDragged/mouseMoved` 各自先按该枚举判定是否上报；`InputHandler` 保持不依赖 SwiftTerm，纯做字节编码 |
+| **理由** | 维持 TerminalUI → TerminalCore 单向依赖边界；InputHandler 仍可纯单测；MouseReportingMode 是 SwiftTerm `MouseMode` 的一对一镜像，未来切换鼠标解析器实现也只需改 adapter 一处 |
+| **影响** | (1) 默认 `.off` 模式下任何鼠标事件都不再写 PTY；(2) `.x10` 仅 press；(3) `.vt200` press+release；(4) `.buttonEventTracking` 加 drag；(5) `.anyEvent` 加 move；(6) drag 编码改为 xterm 标准 `button + 32`（之前固定 35），SGR release 携带 press 时记录的按钮号；(7) 安装 `NSTrackingArea` 让 `.anyEvent` 模式真正能拿到 mouseMoved |
+| **关联** | `refs/22.png`，`Packages/TerminalUI/Sources/TerminalUI/{InputHandler,TerminalView}.swift`，`Packages/TerminalCore/Sources/TerminalCore/SwiftTermAdapter.swift`，新增测试 `TerminalViewMouseGatingTests` |
+
+---
+
 ## 4. 待决事项
 
 | ID | 描述 | 关联 | 需要的信息 | 目标决策时间 |

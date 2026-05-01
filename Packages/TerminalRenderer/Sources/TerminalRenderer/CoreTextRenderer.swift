@@ -14,9 +14,10 @@ public final class CoreTextRenderer: TerminalRendering {
     private let font: CTFont
     public let fontMetrics: FontMetrics
 
-    /// Persistent bitmap context, recreated on size change.
+    /// Persistent bitmap context, recreated on size or backing-scale change.
     private var bitmapContext: CGContext?
     private var lastSize: CGSize = .zero
+    private var lastScale: CGFloat = 0
 
     public init(font: NSFont) {
         self.font = font as CTFont
@@ -38,7 +39,13 @@ public final class CoreTextRenderer: TerminalRendering {
         let height = fontMetrics.cellHeight * CGFloat(buffer.rows)
         let size = CGSize(width: width, height: height)
 
-        let context = obtainContext(size: size)
+        // Match the bitmap's pixel density to the host layer's `contentsScale`,
+        // which TerminalView keeps in sync with the window's `backingScaleFactor`.
+        // A non-positive scale here would produce a degenerate context, so clamp
+        // to 1.0 as a safety net for layers that have not been configured yet.
+        let scale = layer.contentsScale > 0 ? layer.contentsScale : 1.0
+
+        let context = obtainContext(size: size, scale: scale)
         guard let context else { return }
 
         for row in dirtyRows {
@@ -54,14 +61,26 @@ public final class CoreTextRenderer: TerminalRendering {
             drawRowText(buffer: buffer, row: row, y: y, context: context)
         }
 
+        let inset = TerminalLayout.contentInset
+
         // Update text layer contents
-        let textLayer = findOrCreateTextLayer(in: layer, size: size)
+        let textLayer = findOrCreateTextLayer(in: layer, size: size, scale: scale, inset: inset)
         textLayer.contents = context.makeImage()
 
-        // Update cursor
+        // Update cursor. Wide-char cells get a 2-cell-wide cursor block so the
+        // glyph isn't half-occluded; bar/vertical cursors stay narrow.
         let cursorLayer = findOrCreateCursorLayer(in: layer)
+        let cursorCell: Cell = {
+            guard cursor.row >= 0, cursor.row < buffer.rows,
+                  cursor.col >= 0, cursor.col < buffer.cols else {
+                return .empty
+            }
+            return buffer[cursor.row, cursor.col]
+        }()
+        let cursorMultiplier = cursorCell.width == 2 ? 2 : 1
         updateCursor(cursor: cursor, fontMetrics: fontMetrics, cursorLayer: cursorLayer,
-                     totalRows: buffer.rows)
+                     totalRows: buffer.rows, inset: inset,
+                     cellWidthMultiplier: cursorMultiplier)
     }
 
     public func measure(font: NSFont) -> FontMetrics {
@@ -70,53 +89,68 @@ public final class CoreTextRenderer: TerminalRendering {
 
     // MARK: - Bitmap Context
 
-    private func obtainContext(size: CGSize) -> CGContext? {
-        if let bitmapContext, lastSize == size {
+    private func obtainContext(size: CGSize, scale: CGFloat) -> CGContext? {
+        if let bitmapContext, lastSize == size, lastScale == scale {
             return bitmapContext
         }
-        let width = Int(ceil(size.width))
-        let height = Int(ceil(size.height))
-        guard width > 0, height > 0 else { return nil }
+        let pxW = Int(ceil(size.width * scale))
+        let pxH = Int(ceil(size.height * scale))
+        guard pxW > 0, pxH > 0 else { return nil }
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let ctx = CGContext(
             data: nil,
-            width: width,
-            height: height,
+            width: pxW,
+            height: pxH,
             bitsPerComponent: 8,
-            bytesPerRow: width * 4,
+            bytesPerRow: pxW * 4,
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
                 | CGBitmapInfo.byteOrder32Little.rawValue
         )
+        // Map the logical (point) coordinate system onto the physical bitmap so
+        // callers can keep drawing in points and get @scale rendering for free.
+        ctx?.scaleBy(x: scale, y: scale)
+
         ctx?.setAllowsFontSmoothing(true)
         ctx?.setShouldSmoothFonts(true)
         ctx?.setAllowsAntialiasing(true)
         ctx?.setShouldAntialias(true)
+        // Subpixel positioning makes glyph kerning land on fractional points,
+        // which is what macOS Terminal/iTerm do on Retina; sharper than
+        // forcing integer pixel snapping.
+        ctx?.setAllowsFontSubpixelPositioning(true)
+        ctx?.setShouldSubpixelPositionFonts(true)
+        ctx?.setAllowsFontSubpixelQuantization(true)
+        ctx?.setShouldSubpixelQuantizeFonts(true)
 
-        // Fill with background color
+        // Fill with background color (in logical coordinates, scaleCTM is active)
         if let ctx {
             ctx.setFillColor(NSColor.textBackgroundColor.cgColor)
-            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            ctx.fill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
         }
 
         self.bitmapContext = ctx
         self.lastSize = size
+        self.lastScale = scale
         return ctx
     }
 
     // MARK: - Layer Management
 
-    private func findOrCreateTextLayer(in parent: CALayer, size: CGSize) -> CALayer {
+    private func findOrCreateTextLayer(in parent: CALayer, size: CGSize,
+                                       scale: CGFloat, inset: CGSize) -> CALayer {
         let name = "hi-terms-text"
+        let frame = CGRect(origin: CGPoint(x: inset.width, y: inset.height), size: size)
         if let existing = parent.sublayers?.first(where: { $0.name == name }) {
-            existing.frame = CGRect(origin: .zero, size: size)
+            existing.frame = frame
+            existing.contentsScale = scale
             return existing
         }
         let layer = CALayer()
         layer.name = name
-        layer.frame = CGRect(origin: .zero, size: size)
-        layer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        layer.frame = frame
+        layer.contentsScale = scale
         parent.addSublayer(layer)
         return layer
     }
@@ -140,6 +174,14 @@ public final class CoreTextRenderer: TerminalRendering {
         var col = 0
         while col < buffer.cols {
             let cell = buffer[row, col]
+
+            // Skip orphan continuation cells (defensive — primary cell's fill
+            // covers the wide-char span, so a leading width==0 shouldn't start a run).
+            if cell.width == 0 {
+                col += 1
+                continue
+            }
+
             let attrs = cell.attributes
             let bgColor: TerminalColor
             if attrs.inverse {
@@ -153,10 +195,16 @@ public final class CoreTextRenderer: TerminalRendering {
                 continue
             }
 
-            // Merge consecutive cells with the same background
+            // Merge consecutive cells with the same background. Continuation
+            // cells (width==0) are folded into the current run so a wide char
+            // with bg gets its full 2-column span painted.
             let startCol = col
             while col < buffer.cols {
                 let nextCell = buffer[row, col]
+                if nextCell.width == 0 {
+                    col += 1
+                    continue
+                }
                 let nextAttrs = nextCell.attributes
                 let nextBg: TerminalColor
                 if nextAttrs.inverse {
@@ -382,25 +430,32 @@ public final class CoreTextRenderer: TerminalRendering {
     // MARK: - Cursor Rendering
 
     /// Updates cursor layer position, size, and blink animation.
+    ///
+    /// `cellWidthMultiplier` widens block/underline cursors over wide
+    /// (2-column) glyphs. Bar cursors stay narrow.
     func updateCursor(cursor: CursorState, fontMetrics: FontMetrics,
-                      cursorLayer: CALayer, totalRows: Int) {
+                      cursorLayer: CALayer, totalRows: Int,
+                      inset: CGSize = TerminalLayout.contentInset,
+                      cellWidthMultiplier: Int = 1) {
         guard cursor.visible else {
             cursorLayer.isHidden = true
             return
         }
         cursorLayer.isHidden = false
 
-        // CoreGraphics Y is flipped (0 at bottom)
-        let x = CGFloat(cursor.col) * fontMetrics.cellWidth
-        let y = CGFloat(totalRows - 1 - cursor.row) * fontMetrics.cellHeight
+        // CoreGraphics Y is flipped (0 at bottom). Both axes are offset by the
+        // content inset so the cursor lines up with the text layer's origin.
+        let x = inset.width + CGFloat(cursor.col) * fontMetrics.cellWidth
+        let y = inset.height + CGFloat(totalRows - 1 - cursor.row) * fontMetrics.cellHeight
+        let blockWidth = fontMetrics.cellWidth * CGFloat(cellWidthMultiplier)
 
         switch cursor.style {
         case .block, .blinkingBlock:
             cursorLayer.frame = CGRect(x: x, y: y,
-                                       width: fontMetrics.cellWidth, height: fontMetrics.cellHeight)
+                                       width: blockWidth, height: fontMetrics.cellHeight)
         case .underline, .blinkingUnderline:
             cursorLayer.frame = CGRect(x: x, y: y,
-                                       width: fontMetrics.cellWidth, height: 2)
+                                       width: blockWidth, height: 2)
         case .bar, .blinkingBar:
             cursorLayer.frame = CGRect(x: x, y: y,
                                        width: 2, height: fontMetrics.cellHeight)

@@ -24,6 +24,19 @@ public final class SwiftTermAdapter: TerminalParser {
         delegateAdapter.onSendData = { [weak self] data in
             self?.sendHandler?(data)
         }
+        // DECSCUSR (CSI Sp SP t) lands here. The new style is reflected on
+        // `terminal.options.cursorStyle`, but the writer also gets a callback
+        // so the next snapshot can be requested (the bytes that triggered the
+        // change may not include any visible glyphs, so `getUpdateRange` could
+        // skip the cursor row otherwise).
+        delegateAdapter.onCursorStyleChanged = { [weak self] _ in
+            guard let self else { return }
+            self.delegate?.parser(self, didReceiveAction: .bufferUpdated)
+            // Mark the current cursor row as dirty so the renderer rebuilds the
+            // cursor layer with the new style on the next frame.
+            let y = self.terminal.buffer.y
+            self.rangeChangedHandler?(y, y)
+        }
     }
 
     public func parse(data: Data) {
@@ -80,11 +93,27 @@ public final class SwiftTermAdapter: TerminalParser {
             cursor: CursorState(
                 row: terminal.buffer.y,
                 col: terminal.buffer.x,
+                style: mapCursorStyle(terminal.options.cursorStyle),
                 visible: effectiveOffset == 0  // Hide cursor in scrollback mode
             ),
             rows: rows,
             cols: cols
         )
+    }
+
+    /// Maps SwiftTerm's `CursorStyle` (which encodes both shape and blink) to
+    /// Hi-Terms' `CursorStyle`. SwiftTerm's `cursorHidden` flag is currently
+    /// internal and is therefore not honored here — DECTCEM `?25h/l` support is
+    /// tracked separately as a known gap.
+    private func mapCursorStyle(_ style: SwiftTerm.CursorStyle) -> TerminalCore.CursorStyle {
+        switch style {
+        case .blinkBlock:     return .blinkingBlock
+        case .steadyBlock:    return .block
+        case .blinkUnderline: return .blinkingUnderline
+        case .steadyUnderline:return .underline
+        case .blinkBar:       return .blinkingBar
+        case .steadyBar:      return .bar
+        }
     }
 
     /// Reads a single line of cells from the terminal buffer.
@@ -141,14 +170,43 @@ public final class SwiftTermAdapter: TerminalParser {
             return .trueColor(r: r, g: g, b: b)
         }
     }
+
+    // MARK: - Mouse mode
+
+    /// SwiftTerm's current mouse reporting mode, projected onto a Hi-Terms-owned
+    /// enum so callers (notably `TerminalUI`) don't need to import SwiftTerm.
+    public var mouseReportingMode: MouseReportingMode {
+        switch terminal.mouseMode {
+        case .off: return .off
+        case .x10: return .x10
+        case .vt200: return .vt200
+        case .buttonEventTracking: return .buttonEventTracking
+        case .anyEvent: return .anyEvent
+        }
+    }
+}
+
+/// Mirror of SwiftTerm's `Terminal.MouseMode` so the UI layer can gate mouse
+/// reporting without taking a direct dependency on SwiftTerm types.
+public enum MouseReportingMode {
+    case off
+    case x10
+    case vt200
+    case buttonEventTracking
+    case anyEvent
 }
 
 /// Internal delegate adapter for SwiftTerm callbacks.
 private class SwiftTermDelegateAdapter: TerminalDelegate {
     var onSendData: ((Data) -> Void)?
+    var onCursorStyleChanged: ((SwiftTerm.CursorStyle) -> Void)?
 
     func send(source: Terminal, data: ArraySlice<UInt8>) {
         onSendData?(Data(data))
+    }
+
+    func cursorStyleChanged(source: Terminal, newStyle: SwiftTerm.CursorStyle) {
+        onCursorStyleChanged?(newStyle)
     }
 
     func sizeChanged(source: Terminal) {}

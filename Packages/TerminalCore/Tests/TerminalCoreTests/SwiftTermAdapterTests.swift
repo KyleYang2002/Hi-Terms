@@ -81,6 +81,120 @@ final class SwiftTermAdapterTests: XCTestCase {
         XCTAssertTrue(testDelegate.actionReceived,
                       "TerminalParserDelegate should still receive .bufferUpdated")
     }
+
+    // MARK: - Color SGR parsing → Cell.attributes
+
+    /// Feeds an SGR escape + literal text and returns the first cell of row 0.
+    private func cellAfterSGR(_ sgr: String, char: String = "X") -> Cell {
+        let adapter = SwiftTermAdapter(cols: 20, rows: 2)
+        let payload = "\u{1B}[\(sgr)m\(char)"
+        adapter.parse(data: payload.data(using: .utf8)!)
+        return adapter.getCell(col: 0, row: 0)
+    }
+
+    func testSGRForegroundAnsi8MapsToAnsi256() {
+        // SGR 31 = red foreground. SwiftTerm exposes 0-7 as ansi256(code:).
+        let cell = cellAfterSGR("31")
+        XCTAssertEqual(cell.character, "X")
+        XCTAssertEqual(cell.attributes.foregroundColor, .ansi256(code: 1))
+    }
+
+    func testSGRForegroundAnsi256IndexedColor() {
+        // SGR 38;5;208 = orange (cube color)
+        let cell = cellAfterSGR("38;5;208")
+        XCTAssertEqual(cell.attributes.foregroundColor, .ansi256(code: 208))
+    }
+
+    func testSGRForegroundTrueColor() {
+        // SGR 38;2;255;128;0 = orange via 24-bit RGB
+        let cell = cellAfterSGR("38;2;255;128;0")
+        XCTAssertEqual(cell.attributes.foregroundColor, .trueColor(r: 255, g: 128, b: 0))
+    }
+
+    func testSGRBackgroundTrueColor() {
+        // SGR 48;2;10;20;30 = background true color
+        let cell = cellAfterSGR("48;2;10;20;30")
+        XCTAssertEqual(cell.attributes.backgroundColor, .trueColor(r: 10, g: 20, b: 30))
+    }
+
+    func testSGRGrayscaleAnsi256() {
+        // SGR 38;5;240 = mid grayscale (index 240 → value 8 + 8*10 = 88)
+        let cell = cellAfterSGR("38;5;240")
+        XCTAssertEqual(cell.attributes.foregroundColor, .ansi256(code: 240))
+    }
+
+    func testSGRBoldPlusTrueColorPreservesBoth() {
+        // SGR 1 = bold; combined with true color must keep both attributes.
+        let cell = cellAfterSGR("1;38;2;100;200;50")
+        XCTAssertTrue(cell.attributes.bold)
+        XCTAssertEqual(cell.attributes.foregroundColor, .trueColor(r: 100, g: 200, b: 50))
+    }
+
+    // MARK: - Bracketed Paste Mode (DECSET 2004)
+
+    func testBracketedPasteModeDefaultOff() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        XCTAssertFalse(adapter.terminal.bracketedPasteMode)
+    }
+
+    func testBracketedPasteModeEnableThenDisable() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+
+        // Enable: ESC [ ? 2 0 0 4 h
+        adapter.parse(data: "\u{1B}[?2004h".data(using: .utf8)!)
+        XCTAssertTrue(adapter.terminal.bracketedPasteMode,
+                      "DECSET 2004 (h) should enable bracketed paste mode")
+
+        // Disable: ESC [ ? 2 0 0 4 l
+        adapter.parse(data: "\u{1B}[?2004l".data(using: .utf8)!)
+        XCTAssertFalse(adapter.terminal.bracketedPasteMode,
+                       "DECRST 2004 (l) should disable bracketed paste mode")
+    }
+
+    // MARK: - Alternate Screen Buffer (DECSET 1049)
+
+    func testAlternateBufferDefaultOff() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        XCTAssertFalse(adapter.terminal.isCurrentBufferAlternate)
+    }
+
+    func testAlternateBufferEnableThenDisablePreservesPrimaryBuffer() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 5)
+
+        // Write content to primary buffer
+        adapter.parse(data: "primary line\r\n".data(using: .utf8)!)
+        XCTAssertTrue(rowText(adapter, row: 0).contains("primary"),
+                      "precondition: primary buffer should contain 'primary'")
+
+        // Switch to alternate buffer (1049 = save cursor + clear alt + switch)
+        // Then home the cursor so the next write lands at a known location.
+        adapter.parse(data: "\u{1B}[?1049h\u{1B}[H".data(using: .utf8)!)
+        XCTAssertTrue(adapter.terminal.isCurrentBufferAlternate,
+                      "DECSET 1049 (h) should switch to alternate buffer")
+        XCTAssertFalse(rowText(adapter, row: 0).contains("primary"),
+                       "alt buffer should be cleared on enter, must not show primary content")
+
+        adapter.parse(data: "alt line".data(using: .utf8)!)
+        XCTAssertTrue(rowText(adapter, row: 0).contains("alt"),
+                      "alt buffer row 0 should display 'alt line' after homing the cursor")
+
+        // Switch back to primary buffer (1049 also restores cursor)
+        adapter.parse(data: "\u{1B}[?1049l".data(using: .utf8)!)
+        XCTAssertFalse(adapter.terminal.isCurrentBufferAlternate,
+                       "DECRST 1049 (l) should switch back to primary buffer")
+
+        // Primary buffer row 0 must still hold its original content (TUI restore behavior)
+        XCTAssertTrue(rowText(adapter, row: 0).contains("primary"),
+                      "primary buffer must be preserved across alt-screen toggle")
+    }
+
+    /// Concatenates a row's characters and trims trailing whitespace.
+    private func rowText(_ adapter: SwiftTermAdapter, row: Int) -> String {
+        (0..<adapter.terminal.cols)
+            .map { String(adapter.getCell(col: $0, row: row).character) }
+            .joined()
+            .trimmingCharacters(in: .whitespaces)
+    }
 }
 
 // MARK: - Test helpers

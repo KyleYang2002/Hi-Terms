@@ -3,11 +3,13 @@ import CoreText
 import QuartzCore
 import TerminalCore
 
-/// CoreText-based terminal renderer (V0.1).
+/// CoreText-based terminal renderer.
 ///
 /// Renders ScreenBufferSnapshot content into a CALayer using CoreText for text
-/// drawing. Supports ANSI 8-color, text attributes (bold/italic/underline/
-/// strikethrough/inverse/dim/invisible), and cursor rendering with blink animation.
+/// drawing. Supports the full xterm-256color palette (16 system colors + 6×6×6
+/// RGB cube + 24-level grayscale), 24-bit True Color, text attributes (bold/
+/// italic/underline/strikethrough/inverse/dim/invisible), and cursor rendering
+/// with blink animation.
 public final class CoreTextRenderer: TerminalRendering {
     private let font: CTFont
     public let fontMetrics: FontMetrics
@@ -260,34 +262,73 @@ public final class CoreTextRenderer: TerminalRendering {
 
     // MARK: - Color Mapping
 
-    /// ANSI 8-color table (codes 0-7).
-    static let ansi8Colors: [NSColor] = [
+    /// ANSI 16-color table (xterm defaults: 0-7 base + 8-15 bright).
+    static let ansi16Colors: [NSColor] = [
+        // Base (0-7)
         .black,                                                        // 0: Black
-        NSColor(red: 0.8, green: 0.0, blue: 0.0, alpha: 1.0),        // 1: Red
-        NSColor(red: 0.0, green: 0.8, blue: 0.0, alpha: 1.0),        // 2: Green
-        NSColor(red: 0.8, green: 0.8, blue: 0.0, alpha: 1.0),        // 3: Yellow
-        NSColor(red: 0.0, green: 0.0, blue: 0.8, alpha: 1.0),        // 4: Blue
-        NSColor(red: 0.8, green: 0.0, blue: 0.8, alpha: 1.0),        // 5: Magenta
-        NSColor(red: 0.0, green: 0.8, blue: 0.8, alpha: 1.0),        // 6: Cyan
-        NSColor(red: 0.8, green: 0.8, blue: 0.8, alpha: 1.0),        // 7: White
+        NSColor(red: 0.8, green: 0.0, blue: 0.0, alpha: 1.0),         // 1: Red
+        NSColor(red: 0.0, green: 0.8, blue: 0.0, alpha: 1.0),         // 2: Green
+        NSColor(red: 0.8, green: 0.8, blue: 0.0, alpha: 1.0),         // 3: Yellow
+        NSColor(red: 0.0, green: 0.0, blue: 0.8, alpha: 1.0),         // 4: Blue
+        NSColor(red: 0.8, green: 0.0, blue: 0.8, alpha: 1.0),         // 5: Magenta
+        NSColor(red: 0.0, green: 0.8, blue: 0.8, alpha: 1.0),         // 6: Cyan
+        NSColor(red: 0.75, green: 0.75, blue: 0.75, alpha: 1.0),      // 7: White
+        // Bright (8-15)
+        NSColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1.0),         // 8:  Bright black
+        NSColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0),         // 9:  Bright red
+        NSColor(red: 0.0, green: 1.0, blue: 0.0, alpha: 1.0),         // 10: Bright green
+        NSColor(red: 1.0, green: 1.0, blue: 0.0, alpha: 1.0),         // 11: Bright yellow
+        NSColor(red: 0.0, green: 0.0, blue: 1.0, alpha: 1.0),         // 12: Bright blue
+        NSColor(red: 1.0, green: 0.0, blue: 1.0, alpha: 1.0),         // 13: Bright magenta
+        NSColor(red: 0.0, green: 1.0, blue: 1.0, alpha: 1.0),         // 14: Bright cyan
+        NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),         // 15: Bright white
     ]
 
-    /// Maps TerminalColor to NSColor. V0.1 supports ANSI 8-color; 256-color and
-    /// true color fall back to defaults.
+    /// xterm 256-color cube component values (used for indices 16-231).
+    static let cubeLevels: [CGFloat] = [0, 95, 135, 175, 215, 255]
+
+    /// Maps TerminalColor to NSColor.
+    /// Supports the full xterm-256color palette (16 system + 6×6×6 cube + 24
+    /// grayscale) and 24-bit True Color.
     func nsColor(from color: TerminalColor, isForeground: Bool) -> NSColor {
         switch color {
         case .default:
             return isForeground ? .textColor : .textBackgroundColor
         case .defaultInverted:
             return isForeground ? .textBackgroundColor : .textColor
-        case .ansi256(let code) where code < 8:
-            return Self.ansi8Colors[Int(code)]
-        case .ansi256(let code) where code < 16:
-            // Bright colors: V0.1 maps to same base colors
-            return Self.ansi8Colors[Int(code) - 8]
-        case .ansi256, .trueColor:
-            // V0.2 support; V0.1 falls back to default
-            return isForeground ? .textColor : .textBackgroundColor
+        case .ansi256(let code):
+            return Self.ansi256Color(code: code)
+        case .trueColor(let r, let g, let b):
+            return NSColor(
+                red: CGFloat(r) / 255.0,
+                green: CGFloat(g) / 255.0,
+                blue: CGFloat(b) / 255.0,
+                alpha: 1.0
+            )
+        }
+    }
+
+    /// Resolves an xterm 256-color index to NSColor.
+    static func ansi256Color(code: UInt8) -> NSColor {
+        let i = Int(code)
+        if i < 16 {
+            return ansi16Colors[i]
+        } else if i < 232 {
+            // 6×6×6 RGB cube. index = 16 + 36*r + 6*g + b, components ∈ [0,5]
+            let v = i - 16
+            let r = v / 36
+            let g = (v / 6) % 6
+            let b = v % 6
+            return NSColor(
+                red: cubeLevels[r] / 255.0,
+                green: cubeLevels[g] / 255.0,
+                blue: cubeLevels[b] / 255.0,
+                alpha: 1.0
+            )
+        } else {
+            // 24-level grayscale: value = 8 + (i - 232) * 10
+            let gray = CGFloat(8 + (i - 232) * 10) / 255.0
+            return NSColor(red: gray, green: gray, blue: gray, alpha: 1.0)
         }
     }
 

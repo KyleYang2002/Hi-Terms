@@ -30,35 +30,96 @@ final class CoreTextRendererTests: XCTestCase {
         XCTAssertEqual(bg, .textColor)
     }
 
-    func testColorMappingAnsi8() {
-        // Verify all 8 base ANSI colors map correctly
+    func testColorMappingAnsi16Base() {
+        // Codes 0-7: base ANSI palette
         for code in UInt8(0)..<8 {
             let color = renderer.nsColor(from: .ansi256(code: code), isForeground: true)
-            XCTAssertEqual(color, CoreTextRenderer.ansi8Colors[Int(code)],
-                           "ANSI color code \(code) mismatch")
+            XCTAssertEqual(color, CoreTextRenderer.ansi16Colors[Int(code)],
+                           "ANSI base color code \(code) mismatch")
         }
     }
 
-    func testColorMappingBrightFallsBackToBase() {
-        // Codes 8-15 (bright) fall back to 0-7 in V0.1
+    func testColorMappingAnsi16Bright() {
+        // Codes 8-15: bright ANSI palette — distinct from base, full saturation
         for code in UInt8(8)..<16 {
             let bright = renderer.nsColor(from: .ansi256(code: code), isForeground: true)
             let base = renderer.nsColor(from: .ansi256(code: code - 8), isForeground: true)
-            XCTAssertEqual(bright, base,
-                           "Bright code \(code) should fall back to base \(code - 8)")
+            XCTAssertEqual(bright, CoreTextRenderer.ansi16Colors[Int(code)],
+                           "Bright code \(code) mismatch")
+            XCTAssertNotEqual(bright, base,
+                              "Bright code \(code) must differ from base \(code - 8)")
         }
     }
 
-    func testColorMappingAnsi256FallsBackToDefault() {
-        let color = renderer.nsColor(from: .ansi256(code: 128), isForeground: true)
-        XCTAssertEqual(color, .textColor)
-        let bg = renderer.nsColor(from: .ansi256(code: 200), isForeground: false)
-        XCTAssertEqual(bg, .textBackgroundColor)
+    func testColorMappingAnsi256CubeOrigin() {
+        // Index 16 = (0, 0, 0) cube origin = pure black
+        let color = renderer.nsColor(from: .ansi256(code: 16), isForeground: true)
+        assertColor(color, red: 0, green: 0, blue: 0)
     }
 
-    func testColorMappingTrueColorFallsBackToDefault() {
-        let color = renderer.nsColor(from: .trueColor(r: 255, g: 128, b: 0), isForeground: true)
-        XCTAssertEqual(color, .textColor)
+    func testColorMappingAnsi256CubeMax() {
+        // Index 231 = (5, 5, 5) cube max = pure white (255,255,255)
+        let color = renderer.nsColor(from: .ansi256(code: 231), isForeground: true)
+        assertColor(color, red: 255, green: 255, blue: 255)
+    }
+
+    func testColorMappingAnsi256CubeMid() {
+        // Index 124 = 16 + 36*3 + 6*0 + 0 = (3, 0, 0) → (175, 0, 0)
+        let color = renderer.nsColor(from: .ansi256(code: 124), isForeground: true)
+        assertColor(color, red: 175, green: 0, blue: 0)
+
+        // Index 46 = 16 + 36*0 + 6*5 + 0 = (0, 5, 0) → (0, 255, 0)
+        let green = renderer.nsColor(from: .ansi256(code: 46), isForeground: true)
+        assertColor(green, red: 0, green: 255, blue: 0)
+    }
+
+    func testColorMappingAnsi256GrayscaleEnds() {
+        // Index 232 = darkest gray (value 8)
+        let darkest = renderer.nsColor(from: .ansi256(code: 232), isForeground: true)
+        assertColor(darkest, red: 8, green: 8, blue: 8)
+
+        // Index 255 = lightest gray (value 8 + 23*10 = 238)
+        let lightest = renderer.nsColor(from: .ansi256(code: 255), isForeground: true)
+        assertColor(lightest, red: 238, green: 238, blue: 238)
+    }
+
+    func testColorMappingAnsi256GrayscaleMid() {
+        // Index 244 = value 8 + 12*10 = 128 (mid gray)
+        let mid = renderer.nsColor(from: .ansi256(code: 244), isForeground: true)
+        assertColor(mid, red: 128, green: 128, blue: 128)
+    }
+
+    func testColorMappingTrueColor() {
+        // Orange RGB = (255, 128, 0)
+        let orange = renderer.nsColor(from: .trueColor(r: 255, g: 128, b: 0), isForeground: true)
+        assertColor(orange, red: 255, green: 128, blue: 0)
+
+        // Pure black + pure white round-trip
+        assertColor(renderer.nsColor(from: .trueColor(r: 0, g: 0, b: 0), isForeground: true),
+                    red: 0, green: 0, blue: 0)
+        assertColor(renderer.nsColor(from: .trueColor(r: 255, g: 255, b: 255), isForeground: true),
+                    red: 255, green: 255, blue: 255)
+    }
+
+    func testColorMappingTrueColorBackground() {
+        // Background path returns the same color (isForeground only matters for .default/.defaultInverted)
+        let bg = renderer.nsColor(from: .trueColor(r: 12, g: 34, b: 200), isForeground: false)
+        assertColor(bg, red: 12, green: 34, blue: 200)
+    }
+
+    /// Compares an NSColor to expected 8-bit RGB components (after sRGB conversion).
+    private func assertColor(_ color: NSColor, red: UInt8, green: UInt8, blue: UInt8,
+                             file: StaticString = #filePath, line: UInt = #line) {
+        guard let rgb = color.usingColorSpace(.sRGB) else {
+            XCTFail("Color has no sRGB representation: \(color)", file: file, line: line)
+            return
+        }
+        let r = UInt8((rgb.redComponent * 255.0).rounded())
+        let g = UInt8((rgb.greenComponent * 255.0).rounded())
+        let b = UInt8((rgb.blueComponent * 255.0).rounded())
+        XCTAssertEqual(r, red, "red mismatch", file: file, line: line)
+        XCTAssertEqual(g, green, "green mismatch", file: file, line: line)
+        XCTAssertEqual(b, blue, "blue mismatch", file: file, line: line)
     }
 
     // MARK: - Attribute Mapping

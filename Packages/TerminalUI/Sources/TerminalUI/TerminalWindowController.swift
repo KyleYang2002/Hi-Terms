@@ -1,4 +1,5 @@
 import AppKit
+import Configuration
 import TerminalCore
 import TerminalRenderer
 
@@ -19,7 +20,12 @@ public final class TerminalWindowController: NSWindowController {
     /// - Parameters:
     ///   - session: The terminal session (strong reference held by this controller).
     ///   - pipeline: The concrete pipeline (passed to TerminalView for renderer access).
-    public init(session: any Session, pipeline: DefaultTerminalPipeline) {
+    ///   - appConfig: Visual / security knob source. Defaults to `DefaultConfig`.
+    public init(
+        session: any Session,
+        pipeline: DefaultTerminalPipeline,
+        appConfig: AppConfig = DefaultConfig()
+    ) {
         self.session = session
         self.baseTitle = "Hi-Terms"
         self.shellName = (session.launchCommand as NSString).lastPathComponent
@@ -53,7 +59,12 @@ public final class TerminalWindowController: NSWindowController {
         super.init(window: window)
 
         // Create terminal view and set as content
-        terminalView = TerminalView(session: session, pipeline: pipeline, frame: contentRect)
+        terminalView = TerminalView(
+            session: session,
+            pipeline: pipeline,
+            frame: contentRect,
+            appConfig: appConfig
+        )
         window.contentView = terminalView
         window.makeFirstResponder(terminalView)
 

@@ -148,6 +148,62 @@ final class HyperlinkOpenerPolicyTests: XCTestCase {
             opener: rec.opener()))
     }
 
+    // MARK: - Custom allowlist (v0.0.5)
+
+    func testCustomAllowlistAcceptsSSH() {
+        // ssh:// is rejected by the default policy but should pass when the
+        // user adds it to the allowlist via Configuration.
+        let rec = Recorder()
+        XCTAssertTrue(HyperlinkOpener.open(
+            "ssh://user@example.com",
+            cwd: nil,
+            allowedSchemes: ["ssh"],
+            opener: rec.opener()))
+        XCTAssertEqual(rec.opened.first?.scheme, "ssh")
+    }
+
+    func testTightenedAllowlistRejectsHTTPS() {
+        // Removing https from the allowlist must drop a previously-accepted
+        // scheme without falling back to the default set.
+        let rec = Recorder()
+        XCTAssertFalse(HyperlinkOpener.open(
+            "https://anthropic.com",
+            cwd: nil,
+            allowedSchemes: ["http"],
+            opener: rec.opener()))
+        XCTAssertTrue(rec.opened.isEmpty)
+    }
+
+    func testEmptyAllowlistRejectsEverything() {
+        // An empty allowlist (user-disabled hyperlinks) must reject every
+        // scheme — including the previously-hardcoded http/https/file trio.
+        let rec = Recorder()
+        XCTAssertFalse(HyperlinkOpener.open(
+            "https://anthropic.com",
+            cwd: nil,
+            allowedSchemes: [],
+            opener: rec.opener()))
+        XCTAssertFalse(HyperlinkOpener.open(
+            "http://example.com",
+            cwd: nil,
+            allowedSchemes: [],
+            opener: rec.opener()))
+        XCTAssertTrue(rec.opened.isEmpty)
+    }
+
+    func testAllowlistDoesNotBypassFileCWDGate() throws {
+        // file:// is in the allowlist but still must be cwd-gated. The user
+        // cannot opt out of containment by enumerating "file" in the set.
+        let tmp = try makeTempCWD()
+        let rec = Recorder()
+        XCTAssertFalse(HyperlinkOpener.open(
+            "file:///etc/passwd",
+            cwd: tmp,
+            allowedSchemes: ["file"],
+            opener: rec.opener()))
+        XCTAssertTrue(rec.opened.isEmpty)
+    }
+
     // MARK: - Helpers
 
     private func makeTempCWD() throws -> URL {

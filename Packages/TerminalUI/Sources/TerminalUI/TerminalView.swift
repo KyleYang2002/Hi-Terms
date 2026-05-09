@@ -1,4 +1,5 @@
 import AppKit
+import Configuration
 import TerminalCore
 import TerminalRenderer
 
@@ -7,6 +8,13 @@ import TerminalRenderer
 /// Uses CALayer-backed rendering with CoreTextRenderer. Does not directly hold
 /// PTYProcess — all PTY access goes through the Session/Pipeline.
 public final class TerminalView: NSView, NSUserInterfaceValidations {
+    // MARK: - Configuration
+
+    /// Source of truth for visual / security knobs (gutter alpha, scheme
+    /// allowlist, hover mode). Captured at init so a single TerminalView
+    /// reads a stable snapshot per session.
+    private let appConfig: AppConfig
+
     // MARK: - Rendering
 
     private let renderer: CoreTextRenderer
@@ -76,6 +84,12 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
     /// Mirrors `hoveredHyperlinkURL` for the OSC-8-less fallback path.
     private var bareTextHoverSpan: BareTextHoverSpan?
 
+    /// Last viewport cell the pointer was reported at by `mouseMoved` /
+    /// `mouseEntered`, or nil when the pointer is outside the view. Lets
+    /// `flagsChanged` re-evaluate hover at the current cell when ⌘ is pressed
+    /// or released under `hoverMode == .commandKey`.
+    private var lastHoverCell: (col: Int, row: Int)?
+
     /// Opener strategy used by `mouseDown`'s ⌘+click branch. Tests inject a
     /// recording fake; production keeps `HyperlinkOpener.defaultOpener` (i.e.
     /// `NSWorkspace.shared.open`).
@@ -95,14 +109,30 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
     ///   - session: The terminal session (weak reference).
     ///   - pipeline: The concrete pipeline (for renderer/coordinator access).
     ///   - frame: The initial frame rect.
-    public init(session: any Session, pipeline: DefaultTerminalPipeline, frame: NSRect) {
+    ///   - appConfig: Source of truth for visual / security knobs. Defaults
+    ///     to `DefaultConfig()` so existing call sites and tests keep their
+    ///     pre-config behavior; production wires `UserDefaultsConfig`.
+    public init(
+        session: any Session,
+        pipeline: DefaultTerminalPipeline,
+        frame: NSRect,
+        appConfig: AppConfig = DefaultConfig()
+    ) {
         self.session = session
         self.pipeline = pipeline
+        self.appConfig = appConfig
 
         // Create renderer with configured font
         let font = NSFont(name: "Menlo", size: 13)
             ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        self.renderer = CoreTextRenderer(font: font)
+        let gutter = GutterAppearance(
+            runningAlpha: CGFloat(appConfig.gutterRunningAlpha),
+            successAlpha: CGFloat(appConfig.gutterSuccessAlpha),
+            failureAlpha: CGFloat(appConfig.gutterFailureAlpha),
+            widthPx: appConfig.gutterWidthPx,
+            separatorEnabled: appConfig.gutterSeparatorEnabled
+        )
+        self.renderer = CoreTextRenderer(font: font, gutterAppearance: gutter)
         self.fontMetrics = renderer.fontMetrics
 
         super.init(frame: frame)
@@ -239,6 +269,12 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
 
     public override func flagsChanged(with event: NSEvent) {
         inputHandler.updateModifiers(event.modifierFlags)
+        // Under hoverMode == .commandKey, pressing or releasing ⌘ flips the
+        // hover state without any pointer movement. Re-evaluate at the last
+        // known cell so the underline / cursor follows the modifier.
+        if appConfig.hoverMode == .commandKey {
+            refreshHoverForLastCell(modifiers: event.modifierFlags)
+        }
     }
 
     // MARK: - Paste
@@ -332,7 +368,12 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
             let (col, row) = terminalCoordinate(for: event)
             if let url = hyperlinkURL(atCol: col, viewportRow: row) {
                 let cwd = pipeline.shellIntegration.currentWorkingDirectoryURL
-                if HyperlinkOpener.open(url, cwd: cwd, opener: hyperlinkOpener) {
+                if HyperlinkOpener.open(
+                    url,
+                    cwd: cwd,
+                    allowedSchemes: appConfig.hyperlinkSchemeAllowlist,
+                    opener: hyperlinkOpener
+                ) {
                     return
                 }
                 // policy rejected — fall through to normal handling so the
@@ -373,14 +414,20 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
     }
 
     public override func mouseMoved(with event: NSEvent) {
-        // OSC 8 hover detection runs unconditionally (independent of SGR
-        // gating). Hover is a pure visual signal; it never consumes the event,
-        // so SGR `.anyEvent` reporting still works underneath.
+        // Track the latest cell regardless of hover policy so flagsChanged can
+        // refresh hover when ⌘ flips under .commandKey.
         let (col, row) = terminalCoordinate(for: event)
-        updateHyperlinkHover(forCol: col, viewportRow: row)
-        // Bare-text hover runs in parallel; OSC 8 wins when both would match
-        // (the bare-text path explicitly clears its span when a URL is hovered).
-        updateBareTextHover(forCol: col, viewportRow: row)
+        lastHoverCell = (col, row)
+
+        // hoverMode gates the visual hover signal. Hover never consumes the
+        // event, so SGR reporting underneath is unaffected.
+        if isHoverActive(modifiers: event.modifierFlags) {
+            updateHyperlinkHover(forCol: col, viewportRow: row)
+            updateBareTextHover(forCol: col, viewportRow: row)
+        } else {
+            updateHyperlinkHover(forCol: -1, viewportRow: -1)
+            updateBareTextHover(forCol: -1, viewportRow: -1)
+        }
         // Move events never participate in selection (no button held).
         guard shouldReportMove() else { return }
         sendMouse(event: event, type: .move)
@@ -390,8 +437,39 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
         super.mouseExited(with: event)
         // Cursor leaving the view drops any active hover so the underline
         // doesn't linger after the pointer moves to the title bar.
+        lastHoverCell = nil
         updateHyperlinkHover(forCol: -1, viewportRow: -1)
         updateBareTextHover(forCol: -1, viewportRow: -1)
+    }
+
+    // MARK: - Hover policy
+
+    /// True when hover should produce a visual signal at the current cell,
+    /// per `appConfig.hoverMode`. ⌘+click is **not** gated by this — it always
+    /// works even when hover is off.
+    private func isHoverActive(modifiers: NSEvent.ModifierFlags) -> Bool {
+        switch appConfig.hoverMode {
+        case .always:
+            return true
+        case .commandKey:
+            return modifiers.contains(.command)
+        case .off:
+            return false
+        }
+    }
+
+    /// Re-applies hover state at `lastHoverCell` based on current modifiers.
+    /// Called from `flagsChanged` so ⌘ press/release in `.commandKey` mode
+    /// flips the underline without any pointer movement.
+    private func refreshHoverForLastCell(modifiers: NSEvent.ModifierFlags) {
+        let active = isHoverActive(modifiers: modifiers)
+        if let cell = lastHoverCell, active {
+            updateHyperlinkHover(forCol: cell.col, viewportRow: cell.row)
+            updateBareTextHover(forCol: cell.col, viewportRow: cell.row)
+        } else {
+            updateHyperlinkHover(forCol: -1, viewportRow: -1)
+            updateBareTextHover(forCol: -1, viewportRow: -1)
+        }
     }
 
     // MARK: - Hyperlink hover helpers

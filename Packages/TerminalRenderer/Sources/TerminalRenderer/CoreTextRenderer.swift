@@ -14,14 +14,19 @@ public final class CoreTextRenderer: TerminalRendering {
     private let font: CTFont
     public let fontMetrics: FontMetrics
 
+    /// Visual parameters for the OSC 133 gutter. Defaulting to `.default`
+    /// preserves v0.0.4 behavior for all existing constructors and tests.
+    public var gutterAppearance: GutterAppearance
+
     /// Persistent bitmap context, recreated on size or backing-scale change.
     private var bitmapContext: CGContext?
     private var lastSize: CGSize = .zero
     private var lastScale: CGFloat = 0
 
-    public init(font: NSFont) {
+    public init(font: NSFont, gutterAppearance: GutterAppearance = .default) {
         self.font = font as CTFont
         self.fontMetrics = FontMetrics.measure(font: font)
+        self.gutterAppearance = gutterAppearance
     }
 
     // MARK: - TerminalRendering
@@ -251,7 +256,7 @@ public final class CoreTextRenderer: TerminalRendering {
 
         guard let overlay, !overlay.isEmpty else { return }
 
-        let gutterWidth: CGFloat = 3.0
+        let gutterWidth = gutterAppearance.widthPx
         for mark in overlay.rows {
             let row = mark.viewportRow
             guard row >= 0, row < buffer.rows else { continue }
@@ -264,11 +269,11 @@ public final class CoreTextRenderer: TerminalRendering {
             gutter.frame = CGRect(x: 0, y: y,
                                   width: inset.width + gutterWidth,
                                   height: fontMetrics.cellHeight)
-            gutter.backgroundColor = Self.gutterColor(mark.status).cgColor
+            gutter.backgroundColor = gutterColor(mark.status).cgColor
             host.addSublayer(gutter)
 
             // Prompt-top separator (1px hairline at the top of the row).
-            if mark.isPromptTop {
+            if mark.isPromptTop && gutterAppearance.separatorEnabled {
                 let separator = CALayer()
                 let sepY = y + fontMetrics.cellHeight - 1
                 separator.frame = CGRect(x: 0, y: sepY,
@@ -302,15 +307,16 @@ public final class CoreTextRenderer: TerminalRendering {
     }
 
     /// Maps a `BandStatus` to its gutter color. Sourced from semantic NSColor
-    /// roles where possible so dark mode flips automatically.
-    private static func gutterColor(_ status: ShellMarkerOverlay.BandStatus) -> NSColor {
+    /// roles so dark mode flips automatically; alpha comes from
+    /// `gutterAppearance` so users can dial intensity per status.
+    private func gutterColor(_ status: ShellMarkerOverlay.BandStatus) -> NSColor {
         switch status {
         case .running:
-            return NSColor.systemBlue.withAlphaComponent(0.45)
+            return NSColor.systemBlue.withAlphaComponent(gutterAppearance.runningAlpha)
         case .success:
-            return NSColor.systemGreen.withAlphaComponent(0.55)
+            return NSColor.systemGreen.withAlphaComponent(gutterAppearance.successAlpha)
         case .failure:
-            return NSColor.systemRed.withAlphaComponent(0.65)
+            return NSColor.systemRed.withAlphaComponent(gutterAppearance.failureAlpha)
         }
     }
 

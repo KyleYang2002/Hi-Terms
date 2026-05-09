@@ -20,6 +20,13 @@ final class BellCoordinatorConfigTests: XCTestCase {
         let terminalRows = 25
         let terminalType = "xterm-256color"
         var bellBehavior: BellBehavior
+        let gutterRunningAlpha: Double = 0.45
+        let gutterSuccessAlpha: Double = 0.55
+        let gutterFailureAlpha: Double = 0.65
+        let gutterWidthPx: CGFloat = 3.0
+        let gutterSeparatorEnabled = true
+        let hyperlinkSchemeAllowlist: Set<String> = ["http", "https", "file"]
+        let hoverMode: HoverMode = .always
 
         init(bellBehavior: BellBehavior) {
             self.bellBehavior = bellBehavior

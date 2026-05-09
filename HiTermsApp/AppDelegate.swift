@@ -17,7 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let notificationDelegate = BellNotificationDelegate()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        logger.info("HiTerms application did finish launching (v0.0.2)")
+        logger.info("HiTerms application did finish launching (v0.0.5)")
 
         installMainMenu()
         UNUserNotificationCenter.current().delegate = notificationDelegate
@@ -92,7 +92,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Private
 
     private func startTerminalSession() throws {
-        let config = DefaultConfig()
+        let config: AppConfig = UserDefaultsConfig()
 
         // 1. Create PTY
         let ptyConfig = PTYConfiguration(
@@ -132,7 +132,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.session = session
 
         // 7. Create window
-        let windowController = TerminalWindowController(session: session, pipeline: pipeline)
+        let windowController = TerminalWindowController(
+            session: session,
+            pipeline: pipeline,
+            appConfig: config
+        )
         windowController.showWindow(nil)
         self.windowController = windowController
 

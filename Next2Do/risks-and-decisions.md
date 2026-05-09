@@ -92,6 +92,22 @@
 
 ---
 
+### DEC-04: BareTextPathDetector 性能基线（mouseMoved 路径）
+
+| 字段 | 内容 |
+|------|------|
+| **ID** | DEC-04 |
+| **日期** | 2026-05-09 |
+| **状态** | decided |
+| **上下文** | v0.0.4 引入裸文本路径识别后，`mouseMoved` 在每个像素级移动事件都会调用 `BareTextPathDetector.match`（regex 扫描 + cwd 闸 + `stat(2)` 验证）。需要确认这条路径不会拖累 60Hz 渲染（每帧预算 ≈ 16.6ms）。基线由 `BareTextPathDetectorPerfTests` 通过 1000 次采样、200 列行宽的微基准测出（Apple Silicon arm64e、Debug build）。|
+| **测量结果** | cache-hit-no-path: p50=0.83µs / p99=0.96µs / max=4.79µs<br/>cache-hit-on-path: p50=0.83µs / p99=1.08µs / max=2.04µs<br/>cache-miss-no-path: p50=15.50µs / p99=19.25µs / max=39.83µs<br/>cache-miss-on-path: p50=37.62µs / p99=47.12µs / max=77.83µs |
+| **决策** | 当前实现满足 60Hz mouseMoved 预算，无需进一步优化；LRU 行缓存（`(rowText, cwd.path)` key）已经把缓存命中态压到亚微秒，未命中态最坏 78µs（< 0.5% 帧预算）。**Release build 通常比 Debug 快 3-8×，实际生产数字会更好。** |
+| **理由** | (1) 即便每帧触发一次 mouseMoved，p99 47µs 仍只占 0.28% 的 16.6ms 帧预算；(2) 用户实际操作很少超过 60Hz；(3) 缓存命中是稳态——只有跨行移动才会 miss 一次。|
+| **影响** | (1) `BareTextPathDetector` 当前架构（regex + LRU 行缓存 + 即时 stat）无需重写；(2) 后续若加入「整个可见区扫描 + 高亮所有路径」需求，需要重新评估，因为成本会从 1×N 行变成 R×N 行；(3) Release 模式下 SPM `swift test` 因 `@testable import` 与优化交互会 SIGSEGV，故基线统一在 Debug 下取，注释里有标注。 |
+| **关联** | `Packages/TerminalUI/Tests/TerminalUITests/BareTextPathDetectorPerfTests.swift`、`Packages/TerminalUI/Sources/TerminalUI/BareTextPathDetector.swift`、commit `57e6114` |
+
+---
+
 ### DEC-03: 鼠标上报必须按 SwiftTerm `mouseMode` 门控
 
 | 字段 | 内容 |

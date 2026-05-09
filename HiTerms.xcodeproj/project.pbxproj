@@ -60,6 +60,7 @@
 		D4A47AEA205E5F83A4D762B9 /* Configuration in Frameworks */ = {isa = PBXBuildFile; productRef = 9B35BB0426CD792873BC7ED0 /* Configuration */; };
 		D7E2B1DB974136EDE5C30B2F /* EditorJumpTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FD19F0F1C2C3B721A69A96A /* EditorJumpTests.swift */; };
 		D8A56C51C23665D39DCA1A17 /* DefaultTerminalPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A02C9E920BEA3CBD24139B5 /* DefaultTerminalPipelineTests.swift */; };
+		D9B4D07A57BC3B4E397CC680 /* BareTextPathDetectorPerfTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 685F2FB650727A6077911252 /* BareTextPathDetectorPerfTests.swift */; };
 		E290BBD41BFF9B71C5017E9C /* FontMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375B6A495018E75A911A2274 /* FontMetricsTests.swift */; };
 		E3DCF2824C65061969593B1C /* PTYKit in Frameworks */ = {isa = PBXBuildFile; productRef = D6A030EF358AED994ACC52E6 /* PTYKit */; };
 		EFA02C8E95A916DF02E79D95 /* BareTextClickTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975B2133370ABC0071E48953 /* BareTextClickTests.swift */; };
@@ -116,6 +117,7 @@
 		59604596664ADB686A790D70 /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
 		5B70FC7A7386BA6867B321BC /* HiTerms.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HiTerms.entitlements; sourceTree = "<group>"; };
 		67E8ED22E4414992AAA801AD /* CellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CellTests.swift; sourceTree = "<group>"; };
+		685F2FB650727A6077911252 /* BareTextPathDetectorPerfTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BareTextPathDetectorPerfTests.swift; sourceTree = "<group>"; };
 		6C8A74707BF97A0DAFFF382D /* IntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		742E4E1CED9A1AED22E79657 /* ShellMarkerRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellMarkerRenderTests.swift; sourceTree = "<group>"; };
 		7A938DA5C586A06C820030E4 /* TerminalCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TerminalCore; path = Packages/TerminalCore; sourceTree = SOURCE_ROOT; };
@@ -270,6 +272,7 @@
 			children = (
 				975B2133370ABC0071E48953 /* BareTextClickTests.swift */,
 				C9C189F56839C83F62C5E726 /* BareTextHoverTests.swift */,
+				685F2FB650727A6077911252 /* BareTextPathDetectorPerfTests.swift */,
 				D627EF4FD0AE8AF52F702244 /* BareTextPathDetectorTests.swift */,
 				20E93AD85C60B45FFA59CED4 /* BellCoordinatorConfigTests.swift */,
 				5895866656ABE8990E012A68 /* BellHandlerThrottleTests.swift */,
@@ -618,6 +621,7 @@
 			files = (
 				EFA02C8E95A916DF02E79D95 /* BareTextClickTests.swift in Sources */,
 				765378B6CFB5166363B7FC17 /* BareTextHoverTests.swift in Sources */,
+				D9B4D07A57BC3B4E397CC680 /* BareTextPathDetectorPerfTests.swift in Sources */,
 				918E7A0A9E54AABA250C6E8B /* BareTextPathDetectorTests.swift in Sources */,
 				057B96DBBFB96CB2B30B6F47 /* BellCoordinatorConfigTests.swift in Sources */,
 				BFF2F17B0C837FFB88AEF7E2 /* BellHandlerThrottleTests.swift in Sources */,

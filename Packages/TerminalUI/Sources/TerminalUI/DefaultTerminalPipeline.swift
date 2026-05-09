@@ -25,6 +25,11 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
     /// The SwiftTerm adapter (public for scrollback snapshot access).
     public let adapter: SwiftTermAdapter
 
+    /// Per-session bare-text path detector. Holds the LRU cache that keeps
+    /// `mouseMoved`-driven scans out of the regex/stat hot path. Lives on the
+    /// pipeline so each session's cache is isolated and lifetime-bound.
+    public let bareTextDetector = BareTextPathDetector()
+
     /// V0.0.3 T1: forward the adapter's shell integration state so callers
     /// reach it via the `TerminalPipeline` protocol without importing
     /// `SwiftTermAdapter`.
@@ -62,6 +67,21 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
     ///
     /// Fired on the main thread with the *new* value, only on edges.
     public var onAlternateBufferChanged: ((Bool) -> Void)?
+
+    /// Optional sink for "any shell-integration change occurred". Fires for
+    /// every OSC 7 / OSC 133 event so TerminalView can republish the shell
+    /// marker overlay without re-implementing change classification.
+    ///
+    /// Fired on the main thread.
+    public var onShellMarkersChanged: (() -> Void)?
+
+    /// Optional sink for "OSC 7 reported a new cwd". TerminalWindowController
+    /// uses this to update the window title without subscribing to
+    /// `shellIntegration.onChange` directly (the pipeline owns that
+    /// subscription so multiple downstream consumers can fan out).
+    ///
+    /// Fired on the main thread.
+    public var onShellCwdChanged: ((URL?, String?) -> Void)?
 
     // MARK: - Internal components
 
@@ -130,6 +150,23 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
             }
         }
         adapter.delegate = parserDelegateBridge
+
+        // Fan-out shell-integration events. The adapter publishes a single
+        // `onChange` slot, so we centralize the subscription here and dispatch
+        // to multiple downstream hooks (markers / cwd). Downstream subscribers
+        // (`TerminalView`, `TerminalWindowController`) read the dedicated
+        // hooks instead of touching `shellIntegration.onChange` directly,
+        // which would clobber each other.
+        adapter.shellIntegration.onChange = { [weak self] change in
+            guard let self else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.onShellMarkersChanged?()
+                if case let .cwdChanged(url, host, _) = change {
+                    self.onShellCwdChanged?(url, host)
+                }
+            }
+        }
     }
 
     // MARK: - TerminalPipeline

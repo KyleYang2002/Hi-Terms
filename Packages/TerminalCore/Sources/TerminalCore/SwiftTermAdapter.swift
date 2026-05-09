@@ -153,7 +153,8 @@ public final class SwiftTermAdapter: TerminalParser {
         return Cell(
             character: cd.getCharacter(),
             attributes: mapAttributes(cd.attribute),
-            width: cd.width
+            width: cd.width,
+            hyperlinkURL: hyperlinkURL(from: cd)
         )
     }
 
@@ -230,13 +231,36 @@ public final class SwiftTermAdapter: TerminalParser {
                 rowCells.append(Cell(
                     character: cd.getCharacter(),
                     attributes: mapAttributes(cd.attribute),
-                    width: cd.width
+                    width: cd.width,
+                    hyperlinkURL: hyperlinkURL(from: cd)
                 ))
             } else {
                 rowCells.append(.empty)
             }
         }
         return rowCells
+    }
+
+    /// Extracts the OSC 8 hyperlink URL from a SwiftTerm `CharData`, if any.
+    ///
+    /// SwiftTerm registers OSC 8 internally (see SwiftTerm `EscapeSequenceParser`
+    /// dispatch to `Terminal.oscHyperlink`) and stores the **raw payload between
+    /// `OSC 8;` and the terminator** as the per-cell payload — that is the full
+    /// `params;URI` body, not the URI alone. We must NOT re-register an OSC 8
+    /// handler here (it would shadow SwiftTerm's built-in handler).
+    ///
+    /// Per the OSC 8 spec, `params` (e.g. `id=foo:bar=baz`) and `URI` are
+    /// separated by the first `;`. We split on that and return the trailing
+    /// URI portion. An empty URI (caused by the closing `OSC 8;;ST` accidentally
+    /// being applied to a cell) returns nil.
+    private func hyperlinkURL(from cd: CharData) -> String? {
+        guard cd.hasPayload, let raw = cd.getPayload() as? String else { return nil }
+        guard let semi = raw.firstIndex(of: ";") else {
+            // Malformed payload (no `;` at all): treat as the URI itself.
+            return raw.isEmpty ? nil : raw
+        }
+        let uri = String(raw[raw.index(after: semi)...])
+        return uri.isEmpty ? nil : uri
     }
 
     private func mapAttributes(_ attr: Attribute) -> TextAttributes {

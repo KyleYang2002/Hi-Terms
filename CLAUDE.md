@@ -49,7 +49,7 @@ The primary documentation language is Chinese (中文).
 
 ## Current State
 
-V0.0 + V0.1 complete. V0.1 Phase A-F all done (commits `558d074` through `276f106`); B01-B12 all pass; CJK rendering + paste/IME shipped in commit `3171aab`. Baseline: **96 tests, 0 failures**. The repo has:
+V0.0 + V0.1 complete. V0.1 Phase A-F all done (commits `558d074` through `276f106`); B01-B12 all pass; CJK rendering + paste/IME shipped in commit `3171aab`. v0.2 in progress: test suite has grown to **~250 tests across SPM packages, 0 failures**. The repo has:
 
 - Xcode project (via XcodeGen `project.yml`) with HiTerms app target and 6 test targets
 - 5 SPM packages: TerminalCore, PTYKit, TerminalRenderer, TerminalUI, Configuration
@@ -67,13 +67,16 @@ V0.0 + V0.1 complete. V0.1 Phase A-F all done (commits `558d074` through `276f10
 - DMG packaging, vttest automation, performance baseline tooling
 - `Tools/verify-acceptance.sh` (A01-A11) and `Tools/verify-v0.1.sh` for automated verification
 
-**Current step:** entering v0.2 (Roadmap §2.2). The next focus is the three highest-value gaps for AI CLI stability + Terminal/iTerm parity, all under v0.2 scope:
+**Current step:** v0.2 mid-stream. Already shipped in v0.2:
 
-1. **True Color + 256 color rendering** — extend `CoreTextRenderer.nsColor` to handle `.ansi256` (full 256-color palette: 16 system + 6×6×6 cube + 24 grayscale) and `.trueColor` (24-bit RGB). The Cell/Adapter pipeline already carries the values; only the final NSColor mapping is missing. Critical for AI CLI output (codex, Claude Code emit syntax-highlighted code in 24-bit color).
-2. **Window resize → SIGWINCH** — `TerminalView` must observe its frame size changes (`setFrameSize` / `viewDidEndLiveResize`), compute new cols/rows from `fontMetrics`, and call `pipeline.resize(cols:rows:)`. Lower layers are ready; only the UI hook is missing. Essential for TUI apps (vim, top, codex) to redraw correctly after window resize.
-3. **Alternate Screen Buffer + Bracketed Paste test coverage** — bracketed paste was implemented in `3171aab` without tests; alt screen is SwiftTerm-native but unverified end-to-end. Add unit + integration coverage for both.
+- True Color + 256 color rendering (`6fcdf1a`)
+- Window resize → SIGWINCH propagation (`efca6e6`)
+- Bracketed paste tests + selection / Bell / DECTCEM trio (`96a5dfc`, `d5ed68c`, `a5d7105`)
+- Shell Integration: OSC 7 (cwd → window title) + OSC 133 (`commandHistory` lifecycle, `b7`)
+- **OSC 8 hyperlinks + OSC 133 visualization** (`98f6e25`): `Cell.hyperlinkURL` plumbed through SwiftTerm payload; hover underline + ⌘+click open via `HyperlinkOpener` (http/https direct, file:// gated to cwd subtree, other schemes rejected); command-boundary gutter band (success green / failure red / running blue), prompt-top 1px separator, `✗ exit=N` failure badge, alt-screen suppression. New tests: `HyperlinkPayloadTests`, `HyperlinkOpenerPolicyTests`, `HyperlinkClickTests`, `HoverDirtyTests`, `CommandBandTests`, `ShellMarkerRenderTests`, `ShellMarkerPublishTests`. Manual smoke: `Tools/smoke-hyperlinks.sh`.
+- **Bare-text path detection (Smart Selection) + editor jump** (this PR, `v0.0.4` / `b9`): regex-based path scanner over the row under cursor (`PathScanner` + `RowText` in TerminalCore); `BareTextPathDetector` validates each candidate against cwd subtree (reuses `HyperlinkOpener.canOpenFile`) and `FileManager.fileExists`; `EditorJump` dispatches by extension — `.swift/.m/.h/.mm/.c/.cc/.cpp/.hpp/.xcodeproj/.xcworkspace/.xcconfig` → `xed -l <line>`; other extensions with `:line[:col]` → `vscode://file/<path>:line[:col]`; no line info → `NSWorkspace.open(fileURL)`. New `BareTextHoverSpan` channel on `RenderCoordinator`/`TerminalRendering` paints the underline; mutually exclusive with OSC 8 hover so the two never stack. Per-row LRU cache keyed by `(rowText, cwd.path)` keeps mouseMoved out of the regex/stat hot path. New tests: `PathScannerTests`, `RowTextBuilderTests`, `BareTextPathDetectorTests`, `EditorJumpTests`, `BareTextHoverTests`, `BareTextClickTests`. Manual smoke: `Tools/smoke-bare-paths.sh`.
 
-See `Next2Do/v0.2-blueprint.md` for the full v0.2 scope and `Next2Do/risks-and-decisions.md` for cross-version risks.
+Remaining v0.2 priorities (Roadmap §2.2): tab management, multi-window, themes/Configuration UI, fold (skipped from this PR per ROI). See `Next2Do/v0.2-blueprint.md` for the full v0.2 scope and `Next2Do/risks-and-decisions.md` for cross-version risks.
 
 ## Development Workflow
 

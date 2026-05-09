@@ -47,6 +47,45 @@ public enum ShellIntegrationChange: Sendable {
     case commandFinished(record: CommandRecord)
 }
 
+/// Render-side projection of a single command's lifecycle, derived from
+/// `CommandRecord`. Row indices are scroll-invariant (same id-space as
+/// `CommandRecord`) so the renderer / UI layer can clip them to the current
+/// viewport via the adapter's `topScrollInvariantRow`.
+///
+/// Conventions:
+/// - `promptRows` includes every line the prompt itself occupies (single-line
+///   prompts collapse to a single row).
+/// - `outputRows` covers every line of the command's output **excluding** the
+///   row where OSC 133;D was emitted (that line typically holds the *next*
+///   prompt). For a still-running command the upper bound is `Int.max`,
+///   meaning "open-ended down to the bottom of the buffer at render time".
+/// - `nil` for either range means there is nothing to paint for that band
+///   (e.g. a no-output command, or a prompt that hasn't been seen yet).
+public struct CommandBand: Equatable, Sendable {
+    public enum Status: Sendable, Equatable {
+        case running
+        case success
+        case failure(exitCode: Int32)
+    }
+
+    public let id: UUID
+    public let promptRows: ClosedRange<Int>?
+    public let outputRows: ClosedRange<Int>?
+    public let status: Status
+
+    public init(
+        id: UUID,
+        promptRows: ClosedRange<Int>?,
+        outputRows: ClosedRange<Int>?,
+        status: Status
+    ) {
+        self.id = id
+        self.promptRows = promptRows
+        self.outputRows = outputRows
+        self.status = status
+    }
+}
+
 /// Aggregates state derived from OSC 7 (cwd) + OSC 133 (semantic prompt
 /// markers) emitted by an integrated shell rc.
 ///
@@ -149,6 +188,79 @@ public final class ShellIntegrationState: @unchecked Sendable {
         lastExitCode = exitCode
         lock.unlock()
         onChange?(.commandFinished(record: finishedRecord))
+    }
+
+    // MARK: - CommandBand projection
+
+    /// Projects `commandHistory` + `current` into render-friendly bands.
+    ///
+    /// Pure derivation — no state added. The renderer calls this on every
+    /// markers-changed publish; cost is O(n) over the ≤256-record ring.
+    public func bands() -> [CommandBand] {
+        lock.lock()
+        let history = commandHistory
+        let cur = current
+        lock.unlock()
+        var result: [CommandBand] = []
+        result.reserveCapacity(history.count + 1)
+        for record in history {
+            result.append(Self.band(from: record, isCurrent: false))
+        }
+        if let cur {
+            result.append(Self.band(from: cur, isCurrent: true))
+        }
+        return result
+    }
+
+    /// Builds a `CommandBand` from a single record. `isCurrent == true` means
+    /// the record belongs to `current` (still running): even if `endLine` is
+    /// somehow set we still classify as `.running` because the shell hasn't
+    /// emitted the closing OSC 133;D yet.
+    private static func band(from record: CommandRecord, isCurrent: Bool) -> CommandBand {
+        let status: CommandBand.Status
+        if isCurrent || record.endLine == nil {
+            status = .running
+        } else if let exit = record.exitCode, exit != 0 {
+            status = .failure(exitCode: exit)
+        } else {
+            status = .success
+        }
+
+        let promptRows: ClosedRange<Int>? = {
+            guard let p = record.promptStartLine else { return nil }
+            // Upper bound = first line that is NOT part of the prompt − 1.
+            // commandStartLine (B) is the first preferred boundary; fall back
+            // to outputStartLine (C) or endLine (D) if B was skipped.
+            if let next = record.commandStartLine ?? record.outputStartLine ?? record.endLine,
+               next - 1 >= p {
+                return p...(next - 1)
+            }
+            // No subsequent marker → prompt is at least the row where A landed.
+            return p...p
+        }()
+
+        let outputRows: ClosedRange<Int>? = {
+            guard let start = record.outputStartLine else { return nil }
+            // For a still-running command, `endLine` is nil → output extends
+            // open-ended down to the buffer bottom at render time. We encode
+            // that as `Int.max` and let the publisher clip against viewport.
+            let end: Int
+            if let e = record.endLine {
+                // The D row itself usually holds the next prompt, so subtract 1.
+                end = e - 1
+            } else {
+                end = Int.max
+            }
+            guard end >= start else { return nil }
+            return start...end
+        }()
+
+        return CommandBand(
+            id: record.id,
+            promptRows: promptRows,
+            outputRows: outputRows,
+            status: status
+        )
     }
 
     // MARK: - URI parsing

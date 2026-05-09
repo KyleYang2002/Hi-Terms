@@ -31,14 +31,19 @@ public final class CoreTextRenderer: TerminalRendering {
         dirtyRegion: DirtyRegion,
         cursor: CursorState,
         selection: SelectionOverlay?,
+        shellMarkers: ShellMarkerOverlay?,
+        hoveredHyperlinkURL: String?,
+        bareTextHover: BareTextHoverSpan?,
         into layer: CALayer
     ) {
         let dirtyRows = dirtyRegion.swapAndClear()
 
-        // The selection overlay is independent of the bitmap pipeline. Update
-        // it before any early-return so changes to (or clears of) the selection
-        // take effect even when the text bitmap has nothing dirty.
+        // Selection + shell-marker overlays both live in dedicated sublayers,
+        // independent of the bitmap pipeline. Update them before any early-
+        // return so overlay changes propagate even when the text bitmap has
+        // nothing dirty.
         updateSelectionOverlay(selection, in: layer, buffer: buffer)
+        updateShellMarkerOverlay(shellMarkers, in: layer, buffer: buffer)
 
         guard !dirtyRows.isEmpty else { return }
 
@@ -66,6 +71,13 @@ public final class CoreTextRenderer: TerminalRendering {
 
             drawRowBackground(buffer: buffer, row: row, y: y, context: context)
             drawRowText(buffer: buffer, row: row, y: y, context: context)
+            if let hl = hoveredHyperlinkURL {
+                drawRowHoverUnderline(buffer: buffer, row: row, y: y,
+                                      hoveredHyperlinkURL: hl, context: context)
+            }
+            if let span = bareTextHover, span.viewportRow == row {
+                drawBareTextHoverUnderline(span: span, y: y, context: context)
+            }
         }
 
         let inset = TerminalLayout.contentInset
@@ -190,6 +202,116 @@ public final class CoreTextRenderer: TerminalRendering {
         layer.zPosition = 10
         parent.addSublayer(layer)
         return layer
+    }
+
+    /// Shell marker overlay: gutter color band + prompt-top hairline +
+    /// failure badge. Independent of the text bitmap so a still-running
+    /// command's gutter can update the moment a new band lands without
+    /// rebuilding the text.
+    private func findOrCreateShellMarkerLayer(in parent: CALayer) -> CALayer {
+        let name = "hi-terms-shell-markers"
+        if let existing = parent.sublayers?.first(where: { $0.name == name }) {
+            return existing
+        }
+        let layer = CALayer()
+        layer.name = name
+        layer.backgroundColor = NSColor.clear.cgColor
+        // Below the selection layer (zPosition 10) so a highlight visually
+        // dominates the gutter while still letting the gutter peek at the edge.
+        layer.zPosition = 5
+        parent.addSublayer(layer)
+        return layer
+    }
+
+    /// Public for unit testing only — exposes the shell-marker pass without
+    /// requiring a full `render(...)` call. Tests construct a CALayer host
+    /// and verify sublayer geometry.
+    public func _testRenderShellMarkers(_ overlay: ShellMarkerOverlay?,
+                                        in parent: CALayer,
+                                        buffer: ScreenBufferSnapshot) {
+        updateShellMarkerOverlay(overlay, in: parent, buffer: buffer)
+    }
+
+    /// Rebuilds the shell-marker overlay layer to match `overlay`. Disables
+    /// implicit CALayer animations so the gutter / badge snap to place.
+    private func updateShellMarkerOverlay(
+        _ overlay: ShellMarkerOverlay?,
+        in parent: CALayer,
+        buffer: ScreenBufferSnapshot
+    ) {
+        let host = findOrCreateShellMarkerLayer(in: parent)
+        let inset = TerminalLayout.contentInset
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        host.frame = parent.bounds
+        host.sublayers?.removeAll()
+
+        guard let overlay, !overlay.isEmpty else { return }
+
+        let gutterWidth: CGFloat = 3.0
+        for mark in overlay.rows {
+            let row = mark.viewportRow
+            guard row >= 0, row < buffer.rows else { continue }
+
+            let y = inset.height
+                + CGFloat(buffer.rows - 1 - row) * fontMetrics.cellHeight
+
+            // Gutter color bar at x=0 (within the inset region).
+            let gutter = CALayer()
+            gutter.frame = CGRect(x: 0, y: y,
+                                  width: inset.width + gutterWidth,
+                                  height: fontMetrics.cellHeight)
+            gutter.backgroundColor = Self.gutterColor(mark.status).cgColor
+            host.addSublayer(gutter)
+
+            // Prompt-top separator (1px hairline at the top of the row).
+            if mark.isPromptTop {
+                let separator = CALayer()
+                let sepY = y + fontMetrics.cellHeight - 1
+                separator.frame = CGRect(x: 0, y: sepY,
+                                         width: parent.bounds.width, height: 1)
+                separator.backgroundColor = NSColor.separatorColor
+                    .withAlphaComponent(0.6).cgColor
+                host.addSublayer(separator)
+            }
+
+            // Failure badge — drawn into a CATextLayer at row's right edge.
+            if let exit = mark.failureBadgeExitCode {
+                let badge = CATextLayer()
+                let badgeText = NSAttributedString(
+                    string: "✗ exit=\(exit)",
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: NSColor.systemRed.withAlphaComponent(0.7)
+                    ]
+                )
+                badge.string = badgeText
+                badge.contentsScale = host.contentsScale > 0 ? host.contentsScale : 2.0
+                badge.alignmentMode = .right
+                let badgeWidth: CGFloat = fontMetrics.cellWidth * 14
+                let badgeX = parent.bounds.width - inset.width - badgeWidth
+                badge.frame = CGRect(x: badgeX, y: y,
+                                     width: badgeWidth,
+                                     height: fontMetrics.cellHeight)
+                host.addSublayer(badge)
+            }
+        }
+    }
+
+    /// Maps a `BandStatus` to its gutter color. Sourced from semantic NSColor
+    /// roles where possible so dark mode flips automatically.
+    private static func gutterColor(_ status: ShellMarkerOverlay.BandStatus) -> NSColor {
+        switch status {
+        case .running:
+            return NSColor.systemBlue.withAlphaComponent(0.45)
+        case .success:
+            return NSColor.systemGreen.withAlphaComponent(0.55)
+        case .failure:
+            return NSColor.systemRed.withAlphaComponent(0.65)
+        }
     }
 
     /// Mutates the selection-overlay layer to match `selection`. Disables
@@ -377,6 +499,60 @@ public final class CoreTextRenderer: TerminalRendering {
 
             context.restoreGState()
         }
+    }
+
+    /// Bare-text hover decoration. Mirrors `drawRowHoverUnderline` but takes a
+    /// pre-computed `(row, cols)` range instead of scanning per-cell URLs — the
+    /// detector ran in TerminalUI on the row's logical text and already mapped
+    /// the regex match back to cell columns.
+    private func drawBareTextHoverUnderline(span: BareTextHoverSpan, y: CGFloat,
+                                            context: CGContext) {
+        let underlineY = y + 1.0
+        context.saveGState()
+        context.setStrokeColor(NSColor.linkColor.cgColor)
+        context.setLineWidth(1.0)
+        let startX = CGFloat(span.cols.lowerBound) * fontMetrics.cellWidth
+        // `cols` is closed → end column is inclusive, so the underline runs to
+        // the right edge of `upperBound`'s cell.
+        let endX = CGFloat(span.cols.upperBound + 1) * fontMetrics.cellWidth
+        context.move(to: CGPoint(x: startX, y: underlineY))
+        context.addLine(to: CGPoint(x: endX, y: underlineY))
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    /// OSC 8 hyperlink hover decoration. Draws a single underline (in macOS
+    /// system link color) under every contiguous run of cells whose
+    /// `hyperlinkURL` matches the hovered URL on this row. Independent of the
+    /// regular underline run-splitting in `drawRowText` because the URL
+    /// dimension does not align with text-attribute runs (one link can span
+    /// colour / style changes).
+    private func drawRowHoverUnderline(buffer: ScreenBufferSnapshot, row: Int, y: CGFloat,
+                                       hoveredHyperlinkURL: String,
+                                       context: CGContext) {
+        var col = 0
+        let underlineY = y + 1.0
+        let linkColor = NSColor.linkColor.cgColor
+        context.saveGState()
+        context.setStrokeColor(linkColor)
+        context.setLineWidth(1.0)
+        while col < buffer.cols {
+            let cell = buffer[row, col]
+            guard cell.hyperlinkURL == hoveredHyperlinkURL else {
+                col += 1
+                continue
+            }
+            let startCol = col
+            while col < buffer.cols, buffer[row, col].hyperlinkURL == hoveredHyperlinkURL {
+                col += 1
+            }
+            let runStartX = CGFloat(startCol) * fontMetrics.cellWidth
+            let runEndX = CGFloat(col) * fontMetrics.cellWidth
+            context.move(to: CGPoint(x: runStartX, y: underlineY))
+            context.addLine(to: CGPoint(x: runEndX, y: underlineY))
+            context.strokePath()
+        }
+        context.restoreGState()
     }
 
     // MARK: - Color Mapping

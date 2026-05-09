@@ -54,9 +54,38 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
     // MARK: - Tracking
 
     /// The tracking area that lets AppKit deliver `mouseMoved` (no button held)
-    /// to this view. Required for `mouseMode == .anyEvent`. Reinstalled by
-    /// `updateTrackingAreas()` whenever the view's bounds change.
+    /// to this view. Required for `mouseMode == .anyEvent` AND for OSC 8
+    /// hyperlink hover detection. Reinstalled by `updateTrackingAreas()`
+    /// whenever the view's bounds change.
     private var mouseTrackingArea: NSTrackingArea?
+
+    // MARK: - Hyperlink hover
+
+    /// Currently hovered OSC 8 URL. Maintained on every `mouseMoved` /
+    /// `mouseExited` purely as a UI/cursor anchor; the renderer's hover state
+    /// lives in `RenderCoordinator` independently.
+    private var hoveredHyperlinkURL: String?
+
+    /// Tracks whether `NSCursor.pointingHand` was pushed for hyperlink hover so
+    /// `mouseExited` / URL-change pops the matching number of frames. The flag
+    /// is shared between OSC 8 and bare-text hover (which are mutually exclusive
+    /// at any given cell) so `pointingHand` is only ever pushed once at a time.
+    private var hyperlinkCursorPushed: Bool = false
+
+    /// Currently hovered bare-text path span (regex-detected file reference).
+    /// Mirrors `hoveredHyperlinkURL` for the OSC-8-less fallback path.
+    private var bareTextHoverSpan: BareTextHoverSpan?
+
+    /// Opener strategy used by `mouseDown`'s ⌘+click branch. Tests inject a
+    /// recording fake; production keeps `HyperlinkOpener.defaultOpener` (i.e.
+    /// `NSWorkspace.shared.open`).
+    public var hyperlinkOpener: HyperlinkOpener.Opener = HyperlinkOpener.defaultOpener
+
+    /// Editor-jump dispatcher used by ⌘+click on bare-text paths. Tests inject
+    /// recording fakes; production uses the default URL/Process launchers.
+    public var bareTextOpener: (_ absPath: String, _ line: Int?, _ column: Int?) -> Bool = {
+        EditorJump.open(absPath: $0, line: $1, column: $2)
+    }
 
     // MARK: - Init
 
@@ -151,6 +180,7 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
         // SelectionController state directly.
         pipeline.onYDispChanged = { [weak self] _ in
             self?.publishSelectionOverlay()
+            self?.publishShellMarkers()
         }
         pipeline.onAlternateBufferChanged = { [weak self] _ in
             // Either edge invalidates the selection — primary-buffer rows
@@ -159,6 +189,12 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
             guard let self else { return }
             self.selectionController.clear()
             self.publishSelectionOverlay()
+            // Also re-publish shell markers; flipping into the alt buffer
+            // hides them, flipping back out reveals them.
+            self.publishShellMarkers()
+        }
+        pipeline.onShellMarkersChanged = { [weak self] in
+            self?.publishShellMarkers()
         }
     }
 
@@ -289,6 +325,27 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
     // (path 2), never both.
 
     public override func mouseDown(with event: NSEvent) {
+        // OSC 8 hyperlink: ⌘+click on a linked cell opens the URL and consumes
+        // the event, regardless of mouseMode/SGR. We check this *before* the
+        // selection / SGR branches so hyperlinks beat both.
+        if event.modifierFlags.contains(.command) {
+            let (col, row) = terminalCoordinate(for: event)
+            if let url = hyperlinkURL(atCol: col, viewportRow: row) {
+                let cwd = pipeline.shellIntegration.currentWorkingDirectoryURL
+                if HyperlinkOpener.open(url, cwd: cwd, opener: hyperlinkOpener) {
+                    return
+                }
+                // policy rejected — fall through to normal handling so the
+                // gesture still selects / reports as the user expects.
+            }
+            // No OSC 8 link → try the bare-text path detector (codex / Claude
+            // Code default to plain text paths, no escape sequences).
+            if let hit = bareTextHit(atCol: col, viewportRow: row) {
+                if bareTextOpener(hit.absURL.path, hit.line, hit.column) {
+                    return
+                }
+            }
+        }
         if shouldUseSelection(for: event) {
             handleSelectionMouseDown(event)
             return
@@ -316,9 +373,104 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
     }
 
     public override func mouseMoved(with event: NSEvent) {
+        // OSC 8 hover detection runs unconditionally (independent of SGR
+        // gating). Hover is a pure visual signal; it never consumes the event,
+        // so SGR `.anyEvent` reporting still works underneath.
+        let (col, row) = terminalCoordinate(for: event)
+        updateHyperlinkHover(forCol: col, viewportRow: row)
+        // Bare-text hover runs in parallel; OSC 8 wins when both would match
+        // (the bare-text path explicitly clears its span when a URL is hovered).
+        updateBareTextHover(forCol: col, viewportRow: row)
         // Move events never participate in selection (no button held).
         guard shouldReportMove() else { return }
         sendMouse(event: event, type: .move)
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        // Cursor leaving the view drops any active hover so the underline
+        // doesn't linger after the pointer moves to the title bar.
+        updateHyperlinkHover(forCol: -1, viewportRow: -1)
+        updateBareTextHover(forCol: -1, viewportRow: -1)
+    }
+
+    // MARK: - Hyperlink hover helpers
+
+    /// Looks up the OSC 8 URL at a viewport (col, row) cell, or nil if either
+    /// the coords fall out of range or the cell carries no hyperlink. Reads a
+    /// fresh snapshot from the adapter — same pattern selection-drag uses.
+    fileprivate func hyperlinkURL(atCol col: Int, viewportRow row: Int) -> String? {
+        guard col >= 0, row >= 0 else { return nil }
+        let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
+        guard row < snapshot.rows, col < snapshot.cols else { return nil }
+        return snapshot[row, col].hyperlinkURL
+    }
+
+    /// Updates the hovered URL state after the mouse moved (or left) the cell
+    /// at `col`/`row`. Pushes `NSCursor.pointingHand` once when entering a
+    /// hyperlink span, pops it when leaving. Forwards the URL to the renderer
+    /// so the underline appears / disappears on the next frame.
+    ///
+    /// When OSC 8 wins, any bare-text hover is forcibly cleared so the two
+    /// underlines never stack on the same cell.
+    fileprivate func updateHyperlinkHover(forCol col: Int, viewportRow row: Int) {
+        let url = hyperlinkURL(atCol: col, viewportRow: row)
+        guard url != hoveredHyperlinkURL else { return }
+        hoveredHyperlinkURL = url
+        pipeline.renderCoordinator.updateHover(url)
+
+        if url != nil, bareTextHoverSpan != nil {
+            bareTextHoverSpan = nil
+            pipeline.renderCoordinator.updateBareTextHover(nil)
+        }
+        updatePointerCursor()
+    }
+
+    /// Looks up a validated bare-text path at viewport `(col, row)`, or nil if
+    /// the coords are out of range, no path matches, or it doesn't pass the
+    /// detector's cwd / existence gates.
+    fileprivate func bareTextHit(atCol col: Int, viewportRow row: Int) -> BareTextHit? {
+        guard col >= 0, row >= 0 else { return nil }
+        let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
+        guard row < snapshot.rows, col < snapshot.cols else { return nil }
+        let rowText = RowTextBuilder.build(snapshot: snapshot, row: row)
+        let cwd = pipeline.shellIntegration.currentWorkingDirectoryURL
+        return pipeline.bareTextDetector.match(rowText: rowText, cwd: cwd, atCol: col)
+    }
+
+    /// Drives bare-text hover state from a `(col, row)` move. No-op when an
+    /// OSC 8 link already covers the cursor — OSC 8 outranks the regex
+    /// fallback so tagged links don't get a competing underline.
+    fileprivate func updateBareTextHover(forCol col: Int, viewportRow row: Int) {
+        // OSC 8 wins. If the cursor is on a tagged link, clear any bare-text
+        // span and bail.
+        if hoveredHyperlinkURL != nil {
+            if bareTextHoverSpan != nil {
+                bareTextHoverSpan = nil
+                pipeline.renderCoordinator.updateBareTextHover(nil)
+                updatePointerCursor()
+            }
+            return
+        }
+        let hit = bareTextHit(atCol: col, viewportRow: row)
+        let span = hit.map { BareTextHoverSpan(viewportRow: row, cols: $0.cellRange) }
+        guard span != bareTextHoverSpan else { return }
+        bareTextHoverSpan = span
+        pipeline.renderCoordinator.updateBareTextHover(span)
+        updatePointerCursor()
+    }
+
+    /// Single-source-of-truth for the `pointingHand` cursor push/pop. Either
+    /// hover channel being active counts as "hovering something clickable".
+    private func updatePointerCursor() {
+        let active = hoveredHyperlinkURL != nil || bareTextHoverSpan != nil
+        if active, !hyperlinkCursorPushed {
+            NSCursor.pointingHand.push()
+            hyperlinkCursorPushed = true
+        } else if !active, hyperlinkCursorPushed {
+            NSCursor.pop()
+            hyperlinkCursorPushed = false
+        }
     }
 
     private func sendMouse(event: NSEvent, type: MouseEventType) {
@@ -471,6 +623,91 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
         pipeline.renderCoordinator.updateSelection(SelectionOverlay(segments: segments))
     }
 
+    /// Builds and pushes a `ShellMarkerOverlay` derived from the adapter's
+    /// `bands()`. Mirrors `publishSelectionOverlay` — same scroll-invariant
+    /// → viewport row projection, same alt-screen / yDisp re-publish triggers.
+    ///
+    /// Alt-screen behaviour: the primary buffer's command bands are not
+    /// meaningful while a TUI owns the screen, so we emit an empty overlay.
+    /// Once the TUI exits and the primary buffer re-appears, the next call
+    /// to this method (driven by `onAlternateBufferChanged`) restores them.
+    func publishShellMarkers() {
+        guard !pipeline.adapter.isAlternateBuffer else {
+            pipeline.renderCoordinator.updateShellMarkers(nil)
+            return
+        }
+        let bands = pipeline.adapter.shellIntegration.bands()
+        guard !bands.isEmpty else {
+            pipeline.renderCoordinator.updateShellMarkers(nil)
+            return
+        }
+        let (snapshot, topAbs, _) = pipeline.adapter.createSnapshotWithAnchor(
+            scrollbackOffset: scrollbackOffset)
+        let viewportTop = topAbs
+        let viewportBottom = topAbs + snapshot.rows - 1
+
+        var marks: [ShellMarkerOverlay.RowMark] = []
+        for band in bands {
+            let status = Self.overlayStatus(for: band.status)
+
+            // Project promptRows
+            if let prompt = band.promptRows {
+                let lower = max(prompt.lowerBound, viewportTop)
+                let upper = min(prompt.upperBound, viewportBottom)
+                if lower <= upper {
+                    for absRow in lower...upper {
+                        marks.append(.init(
+                            viewportRow: absRow - viewportTop,
+                            status: status,
+                            isPromptTop: absRow == prompt.lowerBound,
+                            failureBadgeExitCode: nil))
+                    }
+                }
+            }
+
+            // Project outputRows. For running commands the upper bound is
+            // `Int.max` (open-ended); we clamp to the viewport bottom and
+            // intentionally skip the failure badge (status is .running, not
+            // .failure, so the conditional below is a no-op anyway).
+            if let output = band.outputRows {
+                let lower = max(output.lowerBound, viewportTop)
+                let upper = min(output.upperBound, viewportBottom)
+                if lower <= upper {
+                    for absRow in lower...upper {
+                        var badge: Int32? = nil
+                        if case let .failure(exit) = band.status,
+                           absRow == output.upperBound,
+                           output.upperBound != Int.max {
+                            // Place ✗ exit=N on the *true* last output row.
+                            // Skipping when the row is clipped away keeps the
+                            // badge from bouncing as the user scrolls.
+                            badge = exit
+                        }
+                        marks.append(.init(
+                            viewportRow: absRow - viewportTop,
+                            status: status,
+                            isPromptTop: false,
+                            failureBadgeExitCode: badge))
+                    }
+                }
+            }
+        }
+        pipeline.renderCoordinator.updateShellMarkers(ShellMarkerOverlay(rows: marks))
+    }
+
+    /// Bridges TerminalCore's `CommandBand.Status` to
+    /// TerminalRenderer's `ShellMarkerOverlay.BandStatus`. Kept as a static
+    /// helper because the two enums live in modules that don't (and
+    /// shouldn't) know about each other.
+    private static func overlayStatus(for status: CommandBand.Status)
+        -> ShellMarkerOverlay.BandStatus {
+        switch status {
+        case .running: return .running
+        case .success: return .success
+        case .failure(let exit): return .failure(exitCode: exit)
+        }
+    }
+
     // MARK: - Bell overlay
 
     /// Plays a brief opacity pulse on `bellOverlayLayer`. Honors macOS
@@ -560,7 +797,7 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.activeInKeyWindow, .mouseMoved, .inVisibleRect],
+            options: [.activeInKeyWindow, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
             owner: self,
             userInfo: nil
         )

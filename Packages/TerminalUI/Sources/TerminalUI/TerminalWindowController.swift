@@ -67,11 +67,10 @@ public final class TerminalWindowController: NSWindowController {
         }
 
         // Update window title when shell integration reports a new cwd.
-        session.shellIntegration.onChange = { [weak self] change in
-            guard case let .cwdChanged(url, host, _) = change else { return }
-            DispatchQueue.main.async {
-                self?.applyWindowTitle(cwd: url, host: host)
-            }
+        // The pipeline owns `shellIntegration.onChange` and fans out to
+        // `onShellCwdChanged`, which is already dispatched on the main thread.
+        pipeline.onShellCwdChanged = { [weak self] url, host in
+            self?.applyWindowTitle(cwd: url, host: host)
         }
     }
 

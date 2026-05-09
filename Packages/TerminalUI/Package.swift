@@ -12,7 +12,8 @@ let package = Package(
     dependencies: [
         .package(path: "../TerminalCore"),
         .package(path: "../TerminalRenderer"),
-        .package(path: "../PTYKit")
+        .package(path: "../PTYKit"),
+        .package(path: "../Configuration")
     ],
     targets: [
         .target(
@@ -20,7 +21,8 @@ let package = Package(
             dependencies: [
                 .product(name: "TerminalCore", package: "TerminalCore"),
                 .product(name: "TerminalRenderer", package: "TerminalRenderer"),
-                .product(name: "PTYKit", package: "PTYKit")
+                .product(name: "PTYKit", package: "PTYKit"),
+                .product(name: "Configuration", package: "Configuration")
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v5)

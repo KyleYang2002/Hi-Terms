@@ -30,9 +30,16 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
     /// This avoids cross-thread access to SwiftTerm from the main thread.
     public var scrollbackOffset: Int = 0
 
+    /// Optional sink for terminal BEL events. Set by `AppDelegate` once a
+    /// `BellCoordinator` exists for this window. The pipeline routes
+    /// `ParserAction.bell` here on the main thread; non-bell parser actions
+    /// are not forwarded (SwiftTerm owns buffer state directly).
+    public var bellHandler: BellHandler?
+
     // MARK: - Internal components
 
     private let ptyProcess: PTYProcess
+    private let parserDelegateBridge = ParserDelegateBridge()
 
     // MARK: - Init
 
@@ -41,6 +48,7 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
     /// Wires the callback chain:
     /// - adapter.sendHandler → ptyProcess.write (terminal responses back to PTY)
     /// - adapter.rangeChangedHandler → dirtyRegion.merge → createSnapshot → coordinator.submitSnapshot
+    /// - adapter.delegate → bridge → bellHandler (BEL events on main thread)
     public init(
         ptyProcess: PTYProcess,
         adapter: SwiftTermAdapter,
@@ -68,6 +76,18 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
             let snapshot = self.adapter.createSnapshot(scrollbackOffset: self.scrollbackOffset)
             self.renderCoordinator.submitSnapshot(snapshot)
         }
+
+        // Route ParserAction.bell to the optional bellHandler. Other actions
+        // are intentionally ignored — SwiftTerm owns the buffer; the bridge
+        // exists purely to surface BEL.
+        parserDelegateBridge.onBell = { [weak self] in
+            guard let self else { return }
+            // Hop to main; BellHandler implementations live on @MainActor.
+            DispatchQueue.main.async { [weak self] in
+                self?.bellHandler?.bellRequested()
+            }
+        }
+        adapter.delegate = parserDelegateBridge
     }
 
     // MARK: - TerminalPipeline
@@ -93,5 +113,21 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
     public func resize(cols: Int, rows: Int) {
         ptyProcess.resize(cols: UInt16(cols), rows: UInt16(rows))
         adapter.terminal.resize(cols: cols, rows: rows)
+    }
+}
+
+/// Internal helper that turns the `TerminalParserDelegate` protocol into a
+/// closure callback. Kept private so the pipeline can hand SwiftTerm a stable
+/// delegate object without exposing the wiring.
+private final class ParserDelegateBridge: TerminalParserDelegate {
+    var onBell: (() -> Void)?
+
+    func parser(_ parser: any TerminalParser, didReceiveAction action: ParserAction) {
+        switch action {
+        case .bell:
+            onBell?()
+        default:
+            break
+        }
     }
 }

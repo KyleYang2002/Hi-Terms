@@ -40,4 +40,12 @@ public final class UserDefaultsConfig: AppConfig {
     public var terminalType: String {
         defaults.string(forKey: "terminalType") ?? fallback.terminalType
     }
+
+    public var bellBehavior: BellBehavior {
+        guard let raw = defaults.string(forKey: "bellBehavior"),
+              let value = BellBehavior(rawValue: raw) else {
+            return fallback.bellBehavior
+        }
+        return value
+    }
 }

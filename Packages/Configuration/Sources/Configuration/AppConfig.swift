@@ -9,4 +9,5 @@ public protocol AppConfig {
     var terminalCols: Int { get }
     var terminalRows: Int { get }
     var terminalType: String { get }
+    var bellBehavior: BellBehavior { get }
 }

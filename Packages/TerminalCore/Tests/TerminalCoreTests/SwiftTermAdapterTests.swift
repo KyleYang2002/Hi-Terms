@@ -241,6 +241,76 @@ final class SwiftTermAdapterTests: XCTestCase {
             .joined()
             .trimmingCharacters(in: .whitespaces)
     }
+
+    // MARK: - DECTCEM (cursor show/hide, ?25 h/l)
+
+    func testCursorVisibleByDefault() {
+        // Fresh adapter must report a visible cursor before any DECTCEM input.
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        XCTAssertTrue(adapter.createSnapshot().cursor.visible,
+                      "Cursor should be visible by default on a fresh adapter")
+    }
+
+    func testCursorHiddenViaDECTCEM() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        adapter.parse(data: "\u{1B}[?25l".data(using: .utf8)!)
+        XCTAssertFalse(adapter.createSnapshot().cursor.visible,
+                       "DECRST 25 (?25l) should hide the cursor")
+    }
+
+    func testCursorShownViaDECTCEM() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        adapter.parse(data: "\u{1B}[?25l".data(using: .utf8)!)
+        adapter.parse(data: "\u{1B}[?25h".data(using: .utf8)!)
+        XCTAssertTrue(adapter.createSnapshot().cursor.visible,
+                      "DECSET 25 (?25h) should re-show a previously hidden cursor")
+    }
+
+    func testDECTCEMTriggersRangeChanged() {
+        // ?25l carries no glyphs, so without an explicit rangeChanged hook
+        // the cursor row would never repaint. The adapter must mark the
+        // cursor's row dirty so the renderer redraws it.
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        var changes: [(Int, Int)] = []
+        adapter.rangeChangedHandler = { changes.append(($0, $1)) }
+
+        adapter.parse(data: "\u{1B}[?25l".data(using: .utf8)!)
+
+        XCTAssertFalse(changes.isEmpty,
+                       "DECTCEM hide must trigger a rangeChanged callback")
+        let y = adapter.terminal.buffer.y
+        XCTAssertTrue(changes.contains(where: { $0.0 <= y && $0.1 >= y }),
+                      "rangeChanged should cover the current cursor row (\(y))")
+    }
+
+    func testDECSTRSoftResetRestoresCursorVisible() {
+        // Hide the cursor, then issue DECSTR (CSI ! p). The adapter must
+        // resync to "visible" since SwiftTerm's cmdSoftReset clears
+        // cursorHidden internally.
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        adapter.parse(data: "\u{1B}[?25l".data(using: .utf8)!)
+        XCTAssertFalse(adapter.createSnapshot().cursor.visible)
+
+        adapter.parse(data: "\u{1B}[!p".data(using: .utf8)!)
+        XCTAssertTrue(adapter.createSnapshot().cursor.visible,
+                      "DECSTR (CSI ! p) must restore cursor visibility")
+    }
+
+    func testMixedCSIWithCursorHide() {
+        // Realistic TUI burst: set color, hide cursor, home, write text.
+        let adapter = SwiftTermAdapter(cols: 80, rows: 25)
+        adapter.parse(data: "\u{1B}[31m\u{1B}[?25l\u{1B}[Hhello".data(using: .utf8)!)
+
+        let snapshot = adapter.createSnapshot()
+        XCTAssertFalse(snapshot.cursor.visible,
+                       "Cursor must be hidden after a mixed CSI burst containing ?25l")
+
+        let row0 = (0..<snapshot.cols).map { String(snapshot[0, $0].character) }
+            .joined()
+            .trimmingCharacters(in: .whitespaces)
+        XCTAssertTrue(row0.contains("hello"),
+                      "Row 0 should contain the literal text emitted after the CSI burst")
+    }
 }
 
 // MARK: - Test helpers

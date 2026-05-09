@@ -6,7 +6,7 @@ import TerminalRenderer
 ///
 /// Uses CALayer-backed rendering with CoreTextRenderer. Does not directly hold
 /// PTYProcess — all PTY access goes through the Session/Pipeline.
-public final class TerminalView: NSView {
+public final class TerminalView: NSView, NSUserInterfaceValidations {
     // MARK: - Rendering
 
     private let renderer: CoreTextRenderer
@@ -15,6 +15,18 @@ public final class TerminalView: NSView {
     // MARK: - Input
 
     private let inputHandler = InputHandler()
+
+    // MARK: - Selection
+
+    /// Owns the live mouse-drag selection. Public so WindowController/menus
+    /// can drive copy without touching internals.
+    public let selectionController = SelectionController()
+
+    // MARK: - Bell overlay
+
+    /// Top-most CALayer used by `flashBell()` for the visual BEL effect.
+    /// Created lazily in `setupLayers`; sized to match `bounds` on resize.
+    private var bellOverlayLayer: CALayer?
 
     // MARK: - Data source
 
@@ -82,6 +94,19 @@ public final class TerminalView: NSView {
         guard let rootLayer = layer else { return }
         rootLayer.backgroundColor = NSColor.textBackgroundColor.cgColor
         syncBackingScale()
+
+        // Top-level overlay used by flashBell. Transparent at rest; the flash
+        // animates `opacity` between 0 and a small positive value. zPosition
+        // keeps it above the text + selection layers regardless of insertion
+        // order.
+        let bell = CALayer()
+        bell.name = "hi-terms-bell"
+        bell.backgroundColor = NSColor.white.cgColor
+        bell.opacity = 0
+        bell.frame = bounds
+        bell.zPosition = 100
+        rootLayer.addSublayer(bell)
+        bellOverlayLayer = bell
     }
 
     /// Mirrors the host window's `backingScaleFactor` onto the root layer so the
@@ -129,11 +154,12 @@ public final class TerminalView: NSView {
     public override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags
 
-        // Cmd combinations: handle paste, ignore the rest (reserved for app shortcuts)
+        // Cmd combinations: forward to the responder chain so the menu
+        // (Edit > Copy / Paste / Select All) handles them. The menu items
+        // installed by AppDelegate fire `paste:`, `copy:`, `selectAll:`
+        // selectors back on us.
         if flags.contains(.command) {
-            if let chars = event.charactersIgnoringModifiers, chars == "v" {
-                paste(nil)
-            }
+            super.keyDown(with: event)
             return
         }
 
@@ -186,6 +212,26 @@ public final class TerminalView: NSView {
         snapToBottomIfScrolled()
     }
 
+    // MARK: - Copy + Select All (menu first responders)
+
+    /// Standard `copy:` selector. Pulls the latest snapshot and asks the
+    /// `SelectionController` to write the extracted text to the general
+    /// pasteboard. Returns silently if nothing is selected.
+    @objc public func copy(_ sender: Any?) {
+        let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
+        _ = selectionController.copyToPasteboard(snapshot: snapshot, cols: snapshot.cols)
+    }
+
+    /// Validates Edit menu items so Copy is greyed out when there's no
+    /// selection, matching macOS conventions. Conforms to
+    /// `NSUserInterfaceValidations` (NSView itself does not implement it).
+    public func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(copy(_:)) {
+            return selectionController.current?.isEmpty == false
+        }
+        return true
+    }
+
     @objc public override func doCommand(by selector: Selector) {
         // Safety net for keys not caught by specialKeyData (e.g., numpad Enter)
         if selector == #selector(insertNewline(_:)) || selector == #selector(insertNewlineIgnoringFieldEditor(_:)) {
@@ -201,32 +247,50 @@ public final class TerminalView: NSView {
 
     // MARK: - Mouse Events
     //
-    // Mouse reporting is gated by SwiftTerm's `mouseMode`:
-    //   - .off  — nothing is reported (a normal shell prompt sees no input).
-    //   - .x10  — press only; release/drag/move suppressed.
-    //   - .vt200 — press + release.
-    //   - .buttonEventTracking — press + release + drag (motion-while-pressed).
-    //   - .anyEvent — press + release + drag + move (motion regardless of button).
+    // Two routing paths share these handlers:
     //
-    // Without this gating, every click in a non-mouse-aware shell gets echoed
-    // back as garbled SGR parameters (see refs/22.png).
+    //   1. SGR mouse reporting — when SwiftTerm's `mouseMode != .off` and the
+    //      user is NOT holding Option. The legacy press/drag/release/move
+    //      gating from V0.1 still applies; this is the path TUI apps depend
+    //      on (vim, htop, codex selection menus, …).
+    //
+    //   2. Local selection — when `mouseMode == .off`, OR the user holds
+    //      Option to override SGR. Builds a `Selection` via the
+    //      `SelectionController`; rendered via the renderer's overlay.
+    //
+    // The two paths are mutually exclusive: a single mouseDown either
+    // contributes bytes to the PTY (path 1) or builds a local selection
+    // (path 2), never both.
 
     public override func mouseDown(with event: NSEvent) {
+        if shouldUseSelection(for: event) {
+            handleSelectionMouseDown(event)
+            return
+        }
         guard shouldReportPress() else { return }
         sendMouse(event: event, type: .press)
     }
 
     public override func mouseUp(with event: NSEvent) {
+        if shouldUseSelection(for: event) {
+            handleSelectionMouseUp(event)
+            return
+        }
         guard shouldReportRelease() else { return }
         sendMouse(event: event, type: .release)
     }
 
     public override func mouseDragged(with event: NSEvent) {
+        if shouldUseSelection(for: event) {
+            handleSelectionMouseDragged(event)
+            return
+        }
         guard shouldReportDrag() else { return }
         sendMouse(event: event, type: .drag)
     }
 
     public override func mouseMoved(with event: NSEvent) {
+        // Move events never participate in selection (no button held).
         guard shouldReportMove() else { return }
         sendMouse(event: event, type: .move)
     }
@@ -237,6 +301,14 @@ public final class TerminalView: NSView {
             return
         }
         session?.write(data: data)
+    }
+
+    /// Selection takes the mouse when SwiftTerm is not asking for SGR, or
+    /// when the user holds Option to override SGR (matches iTerm/macOS
+    /// Terminal convention).
+    private func shouldUseSelection(for event: NSEvent) -> Bool {
+        if currentMouseMode() == .off { return true }
+        return event.modifierFlags.contains(.option)
     }
 
     private func currentMouseMode() -> MouseReportingMode {
@@ -268,6 +340,90 @@ public final class TerminalView: NSView {
 
     private func shouldReportMove() -> Bool {
         currentMouseMode() == .anyEvent
+    }
+
+    // MARK: - Selection routing
+
+    private func handleSelectionMouseDown(_ event: NSEvent) {
+        let (col, row) = terminalCoordinate(for: event)
+        // TODO(v0.2.x): use a scroll-invariant absolute row once SwiftTerm
+        // exposes a reliable `yDisp + viewportRow` mapping. Wave 2-A treats
+        // selection rows as viewport-relative; scrollback selections will
+        // need this lifted before they work end-to-end.
+        let point = GridPoint(row: row, col: col)
+        selectionController.beginDrag(at: point, clickCount: event.clickCount)
+
+        let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
+        switch event.clickCount {
+        case 2: selectionController.snapToWord(in: snapshot, cols: snapshot.cols)
+        case let n where n >= 3: selectionController.snapToLine(cols: snapshot.cols)
+        default: break
+        }
+        publishSelectionOverlay()
+    }
+
+    private func handleSelectionMouseDragged(_ event: NSEvent) {
+        let (col, row) = terminalCoordinate(for: event)
+        let point = GridPoint(row: row, col: col)
+        selectionController.extendDrag(to: point)
+        if selectionController.current?.mode == .word {
+            let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
+            selectionController.snapToWord(in: snapshot, cols: snapshot.cols)
+        } else if selectionController.current?.mode == .line {
+            let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
+            selectionController.snapToLine(cols: snapshot.cols)
+        }
+        publishSelectionOverlay()
+    }
+
+    private func handleSelectionMouseUp(_ event: NSEvent) {
+        let (col, row) = terminalCoordinate(for: event)
+        let point = GridPoint(row: row, col: col)
+        selectionController.endDrag(at: point)
+        publishSelectionOverlay()
+    }
+
+    /// Projects the controller's current selection onto the renderer overlay.
+    /// Selection rows are already viewport-relative in Wave 2-A so the
+    /// projection is a direct `SelectionGeometry.expand` mapping.
+    private func publishSelectionOverlay() {
+        guard let selection = selectionController.current, !selection.isEmpty else {
+            pipeline.renderCoordinator.updateSelection(nil)
+            return
+        }
+        let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
+        let segments = SelectionGeometry.expand(selection, cols: snapshot.cols)
+            .map { SelectionOverlay.Segment(viewportRow: $0.row, cols: $0.cols) }
+        pipeline.renderCoordinator.updateSelection(SelectionOverlay(segments: segments))
+    }
+
+    // MARK: - Bell overlay
+
+    /// Plays a brief opacity pulse on `bellOverlayLayer`. Honors macOS
+    /// Reduce Motion by switching to a single, gentler hold-fade.
+    public func flashBell() {
+        guard let bellLayer = bellOverlayLayer else { return }
+
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = reduceMotion ? 0.12 : 0.0
+        animation.toValue = 0.0
+        animation.isRemovedOnCompletion = true
+
+        if reduceMotion {
+            animation.duration = 0.08
+            bellLayer.add(animation, forKey: "bell-flash")
+            return
+        }
+
+        // Two-stage curve: 0 → 0.18 (peak) → 0 across 120 ms.
+        let pulse = CAKeyframeAnimation(keyPath: "opacity")
+        pulse.values = [0.0, 0.18, 0.0]
+        pulse.keyTimes = [0.0, 0.5, 1.0]
+        pulse.duration = 0.12
+        pulse.isRemovedOnCompletion = true
+        bellLayer.add(pulse, forKey: "bell-flash")
     }
 
     // MARK: - Scroll
@@ -311,6 +467,7 @@ public final class TerminalView: NSView {
 
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
+        bellOverlayLayer?.frame = bounds
         applyResize(for: newSize)
     }
 
@@ -340,6 +497,11 @@ public final class TerminalView: NSView {
         lastGridSize = (cols, rows)
 
         pipeline.resize(cols: cols, rows: rows)
+
+        // Resizing invalidates any in-flight selection (the underlying grid
+        // shifts row/col indices) — drop it instead of trying to remap.
+        selectionController.clear()
+        pipeline.renderCoordinator.updateSelection(nil)
 
         // After resize, the entire grid may need to repaint.
         markAllRowsDirty()

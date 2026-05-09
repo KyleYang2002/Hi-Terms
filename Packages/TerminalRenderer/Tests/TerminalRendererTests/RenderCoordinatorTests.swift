@@ -9,12 +9,14 @@ private final class MockRenderer: TerminalRendering {
     var renderCallCount = 0
     var lastBuffer: ScreenBufferSnapshot?
     var lastCursor: CursorState?
+    var lastSelection: SelectionOverlay?
 
     func render(buffer: ScreenBufferSnapshot, dirtyRegion: DirtyRegion,
-                cursor: CursorState, into layer: CALayer) {
+                cursor: CursorState, selection: SelectionOverlay?, into layer: CALayer) {
         renderCallCount += 1
         lastBuffer = buffer
         lastCursor = cursor
+        lastSelection = selection
     }
 
     func measure(font: NSFont) -> FontMetrics {

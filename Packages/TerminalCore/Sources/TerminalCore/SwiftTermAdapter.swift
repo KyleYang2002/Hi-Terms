@@ -18,6 +18,12 @@ public final class SwiftTermAdapter: TerminalParser {
     public let terminal: Terminal
     private let delegateAdapter: SwiftTermDelegateAdapter
 
+    /// Tracks DECTCEM cursor visibility (`?25h` / `?25l`). SwiftTerm keeps the
+    /// authoritative `cursorHidden` flag internal, so we mirror it here from
+    /// the `showCursor`/`hideCursor` delegate callbacks and surface it via
+    /// `createSnapshot()`.
+    private var cursorVisible: Bool = true
+
     public init(cols: Int = 80, rows: Int = 25) {
         self.delegateAdapter = SwiftTermDelegateAdapter()
         self.terminal = Terminal(delegate: delegateAdapter, options: TerminalOptions(cols: cols, rows: rows))
@@ -37,11 +43,43 @@ public final class SwiftTermAdapter: TerminalParser {
             let y = self.terminal.buffer.y
             self.rangeChangedHandler?(y, y)
         }
+        // DECTCEM `?25h` / `?25l` arrive via showCursor/hideCursor delegate calls.
+        delegateAdapter.onCursorShown = { [weak self] in
+            self?.setCursorVisible(true)
+        }
+        delegateAdapter.onCursorHidden = { [weak self] in
+            self?.setCursorVisible(false)
+        }
+        delegateAdapter.onBell = { [weak self] in
+            self?.handleBell()
+        }
+    }
+
+    /// Updates the mirrored DECTCEM visibility flag and marks the cursor row dirty.
+    private func setCursorVisible(_ v: Bool) {
+        cursorVisible = v
+        let y = terminal.buffer.y
+        rangeChangedHandler?(y, y)
+        delegate?.parser(self, didReceiveAction: .bufferUpdated)
+    }
+
+    /// Forwards a SwiftTerm BEL event as a `.bell` parser action so higher
+    /// layers (Wave1-C BellHandler) can decide on audible/visual feedback.
+    private func handleBell() {
+        delegate?.parser(self, didReceiveAction: .bell)
     }
 
     public func parse(data: Data) {
         let bytes = [UInt8](data)
         terminal.feed(byteArray: bytes)
+
+        // DECSTR (\e[!p) 软复位时 SwiftTerm 直接改 cursorHidden=false 但不发 delegate 回调，
+        // 这里手动同步以避免状态漂移。RIS (\ec) SwiftTerm 显式保留旧值，无需处理。
+        if data.range(of: Data([0x1B, 0x5B, 0x21, 0x70])) != nil {
+            cursorVisible = true
+            let y = terminal.buffer.y
+            rangeChangedHandler?(y, y)
+        }
 
         if let range = terminal.getUpdateRange() {
             terminal.clearUpdateRange()
@@ -94,7 +132,8 @@ public final class SwiftTermAdapter: TerminalParser {
                 row: terminal.buffer.y,
                 col: terminal.buffer.x,
                 style: mapCursorStyle(terminal.options.cursorStyle),
-                visible: effectiveOffset == 0  // Hide cursor in scrollback mode
+                // Hide cursor in scrollback mode AND when DECTCEM has hidden it.
+                visible: (effectiveOffset == 0) && self.cursorVisible
             ),
             rows: rows,
             cols: cols
@@ -102,9 +141,7 @@ public final class SwiftTermAdapter: TerminalParser {
     }
 
     /// Maps SwiftTerm's `CursorStyle` (which encodes both shape and blink) to
-    /// Hi-Terms' `CursorStyle`. SwiftTerm's `cursorHidden` flag is currently
-    /// internal and is therefore not honored here — DECTCEM `?25h/l` support is
-    /// tracked separately as a known gap.
+    /// Hi-Terms' `CursorStyle`.
     private func mapCursorStyle(_ style: SwiftTerm.CursorStyle) -> TerminalCore.CursorStyle {
         switch style {
         case .blinkBlock:     return .blinkingBlock
@@ -200,6 +237,9 @@ public enum MouseReportingMode {
 private class SwiftTermDelegateAdapter: TerminalDelegate {
     var onSendData: ((Data) -> Void)?
     var onCursorStyleChanged: ((SwiftTerm.CursorStyle) -> Void)?
+    var onCursorShown: (() -> Void)?
+    var onCursorHidden: (() -> Void)?
+    var onBell: (() -> Void)?
 
     func send(source: Terminal, data: ArraySlice<UInt8>) {
         onSendData?(Data(data))
@@ -207,6 +247,18 @@ private class SwiftTermDelegateAdapter: TerminalDelegate {
 
     func cursorStyleChanged(source: Terminal, newStyle: SwiftTerm.CursorStyle) {
         onCursorStyleChanged?(newStyle)
+    }
+
+    func showCursor(source: Terminal) {
+        onCursorShown?()
+    }
+
+    func hideCursor(source: Terminal) {
+        onCursorHidden?()
+    }
+
+    func bell(source: Terminal) {
+        onBell?()
     }
 
     func sizeChanged(source: Terminal) {}

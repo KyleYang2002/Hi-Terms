@@ -9,9 +9,17 @@ import TerminalCore
 /// A CADisplayLink callback on the main thread picks up the latest snapshot and
 /// triggers the renderer. This ensures rendering is capped at display refresh rate
 /// and multiple buffer updates between frames are coalesced automatically.
+///
+/// V0.2 also tracks an optional `SelectionOverlay`. The UI layer pushes new
+/// overlays via `updateSelection(_:)`; the next display-link tick forwards the
+/// latest value to the renderer alongside the buffer snapshot. The overlay is
+/// independent of the dirty-region pipeline, so changes to the selection alone
+/// (without buffer mutation) are still applied, because every tick re-supplies
+/// the current overlay to the renderer.
 public final class RenderCoordinator: NSObject, @unchecked Sendable {
     private let lock = OSAllocatedUnfairLock()
     private var latestSnapshot: ScreenBufferSnapshot?
+    private var pendingSelection: SelectionOverlay?
     private var displayLink: CADisplayLink?
     private let dirtyRegion: DirtyRegion
 
@@ -28,6 +36,14 @@ public final class RenderCoordinator: NSObject, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         latestSnapshot = snapshot
+    }
+
+    /// Replaces the current selection overlay. Pass `nil` to clear.
+    /// Safe to call from any thread; rendering happens on the next display tick.
+    public func updateSelection(_ overlay: SelectionOverlay?) {
+        lock.lock()
+        defer { lock.unlock() }
+        pendingSelection = overlay
     }
 
     /// Starts the CADisplayLink render loop on the main RunLoop.
@@ -49,6 +65,7 @@ public final class RenderCoordinator: NSObject, @unchecked Sendable {
     @objc private func onDisplayLink(_ displayLink: CADisplayLink) {
         lock.lock()
         let snapshot = latestSnapshot
+        let selection = pendingSelection
         lock.unlock()
 
         guard let snapshot, let renderer, let targetLayer else { return }
@@ -57,6 +74,7 @@ public final class RenderCoordinator: NSObject, @unchecked Sendable {
             buffer: snapshot,
             dirtyRegion: dirtyRegion,
             cursor: snapshot.cursor,
+            selection: selection,
             into: targetLayer
         )
     }

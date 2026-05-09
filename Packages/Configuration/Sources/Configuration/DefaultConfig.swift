@@ -9,6 +9,7 @@ public struct DefaultConfig: AppConfig, Sendable {
     public let terminalCols: Int = 80
     public let terminalRows: Int = 25
     public let terminalType: String = "xterm-256color"
+    public let bellBehavior: BellBehavior = .visual
 
     public init() {
         self.shellPath = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"

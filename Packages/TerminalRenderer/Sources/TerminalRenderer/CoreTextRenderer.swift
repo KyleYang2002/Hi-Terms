@@ -30,9 +30,16 @@ public final class CoreTextRenderer: TerminalRendering {
         buffer: ScreenBufferSnapshot,
         dirtyRegion: DirtyRegion,
         cursor: CursorState,
+        selection: SelectionOverlay?,
         into layer: CALayer
     ) {
         let dirtyRows = dirtyRegion.swapAndClear()
+
+        // The selection overlay is independent of the bitmap pipeline. Update
+        // it before any early-return so changes to (or clears of) the selection
+        // take effect even when the text bitmap has nothing dirty.
+        updateSelectionOverlay(selection, in: layer, buffer: buffer)
+
         guard !dirtyRows.isEmpty else { return }
 
         let width = fontMetrics.cellWidth * CGFloat(buffer.cols)
@@ -165,6 +172,70 @@ public final class CoreTextRenderer: TerminalRendering {
         layer.backgroundColor = NSColor.textColor.cgColor
         parent.addSublayer(layer)
         return layer
+    }
+
+    /// Selection overlay: a transparent host layer that contains one filled
+    /// child rectangle per highlighted row segment. Updates run on every render
+    /// pass so a cleared selection drops back to zero children immediately.
+    private func findOrCreateSelectionLayer(in parent: CALayer) -> CALayer {
+        let name = "hi-terms-selection"
+        if let existing = parent.sublayers?.first(where: { $0.name == name }) {
+            return existing
+        }
+        let layer = CALayer()
+        layer.name = name
+        layer.backgroundColor = NSColor.clear.cgColor
+        // Sit above the text/cursor layers; backed by NSView's root layer in
+        // production, by a plain CALayer in tests.
+        layer.zPosition = 10
+        parent.addSublayer(layer)
+        return layer
+    }
+
+    /// Mutates the selection-overlay layer to match `selection`. Disables
+    /// implicit CALayer animations so highlight rectangles snap into place
+    /// without fading.
+    private func updateSelectionOverlay(
+        _ selection: SelectionOverlay?,
+        in parent: CALayer,
+        buffer: ScreenBufferSnapshot
+    ) {
+        let host = findOrCreateSelectionLayer(in: parent)
+        let inset = TerminalLayout.contentInset
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        // Mirror the parent's frame so child geometry uses the same coordinate
+        // space the text/cursor layers share.
+        host.frame = parent.bounds
+        host.sublayers?.removeAll()
+
+        guard let selection, !selection.isEmpty else { return }
+
+        let highlightColor = NSColor.selectedTextBackgroundColor
+            .withAlphaComponent(0.45).cgColor
+
+        for segment in selection.segments {
+            let row = segment.viewportRow
+            guard row >= 0, row < buffer.rows else { continue }
+            let lower = max(0, segment.cols.lowerBound)
+            let upper = min(buffer.cols - 1, segment.cols.upperBound)
+            guard lower <= upper else { continue }
+
+            let x = inset.width + CGFloat(lower) * fontMetrics.cellWidth
+            // Match the cursor's coordinate system: row 0 at the top, CG y up.
+            let y = inset.height
+                + CGFloat(buffer.rows - 1 - row) * fontMetrics.cellHeight
+            let width = CGFloat(upper - lower + 1) * fontMetrics.cellWidth
+            let rect = CGRect(x: x, y: y, width: width, height: fontMetrics.cellHeight)
+
+            let segmentLayer = CALayer()
+            segmentLayer.frame = rect
+            segmentLayer.backgroundColor = highlightColor
+            host.addSublayer(segmentLayer)
+        }
     }
 
     // MARK: - Row Drawing

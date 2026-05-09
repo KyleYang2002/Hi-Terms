@@ -23,6 +23,13 @@ packages:
     path: Packages/TerminalUI
   Configuration:
     path: Packages/Configuration
+  # Test targets that touch SwiftTerm types directly (e.g.
+  # adapter.terminal.buffer.y in SwiftTermAdapterTests) need an explicit link
+  # against SwiftTerm — Xcode does not transitively link it through
+  # TerminalCore the way swift-package-manager does.
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm.git
+    from: 1.13.0
 
 targets:
   HiTerms:
@@ -59,6 +66,8 @@ targets:
         ENABLE_APP_SANDBOX: NO
     dependencies:
       - package: TerminalCore
+      - package: SwiftTerm
+        product: SwiftTerm
 
   PTYKitTests:
     type: bundle.unit-test
@@ -99,6 +108,7 @@ targets:
       - package: TerminalRenderer
       - package: PTYKit
       - package: TerminalUI
+      - package: Configuration
 
   ConfigurationTests:
     type: bundle.unit-test

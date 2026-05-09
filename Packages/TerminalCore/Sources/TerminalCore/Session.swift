@@ -20,6 +20,12 @@ public protocol Session: AnyObject {
     /// Associated terminal pipeline (owned by session).
     var pipeline: any TerminalPipeline { get }
 
+    /// Shell integration state (OSC 7 cwd + OSC 133 prompt markers).
+    /// V0.0.3 T1: surfaced through Session so downstream features (cwd-aware
+    /// New Tab, command boundaries, scrollback navigation) can subscribe
+    /// without depending on the concrete pipeline type.
+    var shellIntegration: ShellIntegrationState { get }
+
     /// Start the session: activate the pipeline's data flow.
     func start() throws
 
@@ -34,4 +40,12 @@ public protocol Session: AnyObject {
 
     /// Callback fired when state changes (e.g., running → exited).
     var onStateChanged: ((SessionState) -> Void)? { get set }
+}
+
+extension Session {
+    /// Default implementation: forward to the owned pipeline. Concrete sessions
+    /// only override this if they have a non-pipeline source of shell state.
+    /// Keeps lightweight test mocks (and any future Session impls that simply
+    /// wrap a pipeline) from having to restate the trivial passthrough.
+    public var shellIntegration: ShellIntegrationState { pipeline.shellIntegration }
 }

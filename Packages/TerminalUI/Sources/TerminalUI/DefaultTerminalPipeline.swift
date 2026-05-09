@@ -25,6 +25,11 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
     /// The SwiftTerm adapter (public for scrollback snapshot access).
     public let adapter: SwiftTermAdapter
 
+    /// V0.0.3 T1: forward the adapter's shell integration state so callers
+    /// reach it via the `TerminalPipeline` protocol without importing
+    /// `SwiftTermAdapter`.
+    public var shellIntegration: ShellIntegrationState { adapter.shellIntegration }
+
     /// Scrollback offset set by TerminalView on scroll events.
     /// Read by rangeChangedHandler when creating snapshots.
     /// This avoids cross-thread access to SwiftTerm from the main thread.
@@ -36,10 +41,41 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
     /// are not forwarded (SwiftTerm owns buffer state directly).
     public var bellHandler: BellHandler?
 
+    /// Optional sink for "the absolute row at the viewport top changed".
+    ///
+    /// SwiftTerm rolls `yDisp` forward whenever PTY output pushes new lines
+    /// into scrollback, but neither the adapter nor the pipeline owns the
+    /// selection state that would need to reproject. Wave 2-C has TerminalView
+    /// install a hook here so it can call `publishSelectionOverlay()` and keep
+    /// any active selection visually anchored to the same buffer rows.
+    ///
+    /// Fired on the main thread, only when the value actually changes.
+    public var onYDispChanged: ((Int) -> Void)?
+
+    /// Optional sink for "the alternate-screen flag flipped".
+    ///
+    /// Switching into the alt buffer (DECSET 1049 / 47 / 1047) makes any
+    /// selection rooted in the primary buffer's row ids meaningless; switching
+    /// back out clobbers the selection that may have been built against the
+    /// alt buffer. Either edge is reported here so TerminalView can drop the
+    /// selection.
+    ///
+    /// Fired on the main thread with the *new* value, only on edges.
+    public var onAlternateBufferChanged: ((Bool) -> Void)?
+
     // MARK: - Internal components
 
     private let ptyProcess: PTYProcess
     private let parserDelegateBridge = ParserDelegateBridge()
+
+    /// Last `yDisp` (= `topScrollInvariantRow`) value reported via the hook.
+    /// Read/written only inside `rangeChangedHandler`, which the adapter calls
+    /// on the same parser thread, so no extra synchronization is needed.
+    private var lastTopScrollInvariantRow: Int = 0
+
+    /// Last `isAlternateBuffer` value reported via the hook. Same threading
+    /// note as `lastTopScrollInvariantRow`.
+    private var lastIsAlternateBuffer: Bool = false
 
     // MARK: - Init
 
@@ -67,6 +103,11 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
             ptyProcess?.write(data: data)
         }
 
+        // Seed the change-detector caches with the adapter's current state so
+        // the very first rangeChanged callback doesn't fire a spurious hop.
+        self.lastTopScrollInvariantRow = adapter.topScrollInvariantRow
+        self.lastIsAlternateBuffer = adapter.isAlternateBuffer
+
         // Wire rangeChanged → dirty region → snapshot → render coordinator
         // SwiftTerm's rangeChanged passes inclusive (startY, endY),
         // DirtyRegion.merge(rows:) takes Range<Int> (half-open), so endY + 1
@@ -75,6 +116,7 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
             self.dirtyRegion.merge(rows: startY..<(endY + 1))
             let snapshot = self.adapter.createSnapshot(scrollbackOffset: self.scrollbackOffset)
             self.renderCoordinator.submitSnapshot(snapshot)
+            self.detectAndForwardSelectionEdges()
         }
 
         // Route ParserAction.bell to the optional bellHandler. Other actions
@@ -113,6 +155,34 @@ public final class DefaultTerminalPipeline: TerminalPipeline {
     public func resize(cols: Int, rows: Int) {
         ptyProcess.resize(cols: UInt16(cols), rows: UInt16(rows))
         adapter.terminal.resize(cols: cols, rows: rows)
+    }
+
+    // MARK: - Selection-relevant edge detection
+
+    /// Compares the adapter's current `topScrollInvariantRow` /
+    /// `isAlternateBuffer` against the last reported values and fires the
+    /// matching hook on the main thread when either edge is crossed.
+    ///
+    /// Called from `rangeChangedHandler`, which the adapter invokes whenever
+    /// it has just finished feeding bytes — that's also when SwiftTerm has
+    /// fully applied scroll/alt-buffer transitions, so reading both values
+    /// here is consistent with the snapshot we just shipped.
+    private func detectAndForwardSelectionEdges() {
+        let newTop = adapter.topScrollInvariantRow
+        if newTop != lastTopScrollInvariantRow {
+            lastTopScrollInvariantRow = newTop
+            if let hook = onYDispChanged {
+                DispatchQueue.main.async { hook(newTop) }
+            }
+        }
+
+        let newAlt = adapter.isAlternateBuffer
+        if newAlt != lastIsAlternateBuffer {
+            lastIsAlternateBuffer = newAlt
+            if let hook = onAlternateBufferChanged {
+                DispatchQueue.main.async { hook(newAlt) }
+            }
+        }
     }
 }
 

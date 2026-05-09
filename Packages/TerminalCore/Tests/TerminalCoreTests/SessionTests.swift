@@ -7,6 +7,7 @@ import XCTest
 private final class MockPipeline: TerminalPipeline {
     var parser: any TerminalParser
     var screenBuffer: ScreenBuffer
+    let shellIntegration = ShellIntegrationState()
 
     var startCalled = false
     var stopCalled = false

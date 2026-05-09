@@ -17,6 +17,9 @@ public final class TerminalSession: Session {
     public let pipeline: any TerminalPipeline
     public var onStateChanged: ((SessionState) -> Void)?
 
+    // V0.0.3 T1: `shellIntegration` is satisfied by the default protocol
+    // extension on `Session`, which forwards to `pipeline.shellIntegration`.
+
     /// Guards against double-start.
     private var started = false
 

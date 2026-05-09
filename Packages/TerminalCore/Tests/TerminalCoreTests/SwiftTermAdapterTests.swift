@@ -311,6 +311,99 @@ final class SwiftTermAdapterTests: XCTestCase {
         XCTAssertTrue(row0.contains("hello"),
                       "Row 0 should contain the literal text emitted after the CSI burst")
     }
+
+    // MARK: - Scroll-invariant row helpers (Wave 1 — shared by T1/T2)
+
+    func testTopScrollInvariantRowMatchesYDispAtStart() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        XCTAssertEqual(adapter.topScrollInvariantRow, 0,
+                       "Fresh adapter has yDisp == 0")
+        XCTAssertEqual(adapter.topScrollInvariantRow, adapter.terminal.buffer.yDisp,
+                       "topScrollInvariantRow must equal buffer.yDisp")
+    }
+
+    func testTopScrollInvariantRowAfterFeedTracksYDisp() {
+        // Feed fewer rows than the viewport — yDisp should stay at 0,
+        // and helper must agree regardless of the actual value.
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        let lines = String(repeating: "x\n", count: 5)
+        adapter.parse(data: Data(lines.utf8))
+        XCTAssertEqual(adapter.topScrollInvariantRow, adapter.terminal.buffer.yDisp,
+                       "topScrollInvariantRow must stay in lockstep with buffer.yDisp")
+    }
+
+    func testTopScrollInvariantRowGrowsWithScrollback() {
+        // Feed enough lines to push yDisp past 0.
+        let adapter = SwiftTermAdapter(cols: 80, rows: 5)
+        for i in 1...20 {
+            adapter.parse(data: "L\(i)\r\n".data(using: .utf8)!)
+        }
+        XCTAssertGreaterThan(adapter.topScrollInvariantRow, 0,
+                             "After overflow, yDisp must advance into scrollback")
+        XCTAssertEqual(adapter.topScrollInvariantRow, adapter.terminal.buffer.yDisp)
+    }
+
+    func testBottomScrollInvariantRowEqualsTopPlusRowsMinusOne() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        XCTAssertEqual(adapter.bottomScrollInvariantRow,
+                       adapter.topScrollInvariantRow + 23)
+    }
+
+    func testScrollInvariantRowMappingRoundTrip() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        let abs0 = adapter.scrollInvariantRow(forViewportRow: 5)
+        XCTAssertEqual(adapter.viewportRow(forScrollInvariantRow: abs0), 5)
+    }
+
+    func testViewportRowReturnsNilWhenOffscreen() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        let top = adapter.topScrollInvariantRow
+        XCTAssertNil(adapter.viewportRow(forScrollInvariantRow: top - 1),
+                     "Row above viewport top must map to nil")
+        XCTAssertNil(adapter.viewportRow(forScrollInvariantRow: top + 24),
+                     "Row past viewport bottom must map to nil")
+        XCTAssertEqual(adapter.viewportRow(forScrollInvariantRow: top), 0)
+        XCTAssertEqual(adapter.viewportRow(forScrollInvariantRow: top + 23), 23)
+    }
+
+    func testIsAlternateBufferDefaultsFalse() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        XCTAssertFalse(adapter.isAlternateBuffer)
+    }
+
+    func testIsAlternateBufferTrueAfterEnterAltScreenAndFalseAfterLeave() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        adapter.parse(data: "\u{1B}[?1049h".data(using: .utf8)!)
+        XCTAssertTrue(adapter.isAlternateBuffer,
+                      "DECSET 1049 must flip isAlternateBuffer to true")
+        adapter.parse(data: "\u{1B}[?1049l".data(using: .utf8)!)
+        XCTAssertFalse(adapter.isAlternateBuffer,
+                       "DECRST 1049 must restore isAlternateBuffer to false")
+    }
+
+    func testCreateSnapshotWithAnchorReturnsConsistentTop() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        let (_, top, isAlt) = adapter.createSnapshotWithAnchor()
+        XCTAssertEqual(top, adapter.topScrollInvariantRow,
+                       "Anchor top must match topScrollInvariantRow at the same instant")
+        XCTAssertFalse(isAlt)
+    }
+
+    func testCreateSnapshotWithAnchorClampsScrollbackOffset() {
+        // No scrollback yet → any positive offset clamps to 0,
+        // so anchor top must equal current yDisp.
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        let (_, top, _) = adapter.createSnapshotWithAnchor(scrollbackOffset: 100)
+        XCTAssertEqual(top, adapter.terminal.buffer.yDisp,
+                       "Out-of-range offset must clamp identically to createSnapshot()")
+    }
+
+    func testCreateSnapshotWithAnchorTracksAltScreen() {
+        let adapter = SwiftTermAdapter(cols: 80, rows: 24)
+        adapter.parse(data: "\u{1B}[?1049h".data(using: .utf8)!)
+        let (_, _, isAlt) = adapter.createSnapshotWithAnchor()
+        XCTAssertTrue(isAlt, "Anchor must observe alt-screen state")
+    }
 }
 
 // MARK: - Test helpers

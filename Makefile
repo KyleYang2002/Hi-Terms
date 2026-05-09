@@ -9,7 +9,8 @@ XCODEBUILD = xcodebuild -scheme $(SCHEME) \
              -destination '$(DESTINATION)' \
              -derivedDataPath $(DERIVED_DATA)
 
-.PHONY: help build build-release test test-unit lint ci clean generate
+.PHONY: help build build-release test test-unit lint ci clean generate \
+        install-shell-integration uninstall-shell-integration
 
 help: ## 显示所有可用命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -43,3 +44,9 @@ clean: ## 清理构建产物
 
 generate: ## 重新生成 Xcode 项目
 	./Tools/generate-project.sh
+
+install-shell-integration: ## 安装 shell integration（OSC 7+133）到 ~/.zshrc 或 ~/.bashrc
+	./Tools/install-shell-integration.sh
+
+uninstall-shell-integration: ## 卸载 shell integration
+	./Tools/uninstall-shell-integration.sh

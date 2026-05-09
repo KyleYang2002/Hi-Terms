@@ -2,8 +2,21 @@ import Foundation
 
 /// A point on the scroll-invariant terminal grid.
 ///
-/// `row` is an absolute row index that does not change as the screen scrolls;
-/// callers are responsible for mapping to a snapshot row when extracting text.
+/// `row` is an *absolute* (scroll-invariant) buffer row id — the same value
+/// SwiftTerm uses for `yDisp` + viewportRow. It does not change as the user
+/// scrolls or as the PTY pushes new lines into scrollback; the row id is
+/// stable for the lifetime of the buffer line.
+///
+/// Two consequences for callers:
+///
+/// 1. To paint a selection, project absolute rows back into the current
+///    viewport by subtracting `SwiftTermAdapter.topScrollInvariantRow` (after
+///    accounting for any user-initiated scrollback offset). `TerminalView`
+///    encapsulates this projection.
+/// 2. To extract text from a `ScreenBufferSnapshot`, translate absolute rows
+///    to snapshot-relative rows the same way before invoking
+///    `SelectionTextExtractor` — that helper operates purely in snapshot
+///    coordinates and does not know about absolute ids.
 public struct GridPoint: Equatable, Hashable, Sendable {
     public let row: Int
     public let col: Int

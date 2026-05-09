@@ -9,6 +9,11 @@ public protocol TerminalPipeline: AnyObject {
     var parser: any TerminalParser { get }
     var screenBuffer: ScreenBuffer { get }
 
+    /// Shell integration state aggregated from OSC 7 + OSC 133. Owned by the
+    /// adapter and surfaced here so `Session` can expose it without taking a
+    /// dependency on `SwiftTermAdapter`. V0.0.3 T1.
+    var shellIntegration: ShellIntegrationState { get }
+
     func start()
     func stop()
     func write(data: Data)

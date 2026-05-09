@@ -6,10 +6,12 @@ import TerminalCore
 public final class TerminalPipelineStub: TerminalPipeline {
     public let parser: any TerminalParser
     public let screenBuffer: ScreenBuffer
+    public let shellIntegration: ShellIntegrationState
 
     public init(parser: any TerminalParser, screenBuffer: ScreenBuffer) {
         self.parser = parser
         self.screenBuffer = screenBuffer
+        self.shellIntegration = ShellIntegrationState()
     }
 
     public func start() {}

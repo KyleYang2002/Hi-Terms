@@ -143,6 +143,23 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
         coordinator.renderer = renderer
         coordinator.targetLayer = layer
         coordinator.startDisplayLink()
+
+        // Wave 2-C: keep the on-screen selection overlay anchored to the
+        // buffer rows the user picked, even when bytes from the PTY push
+        // `yDisp` forward or a TUI flips into the alt buffer. The pipeline
+        // dispatches both hooks to main, so they are safe to touch
+        // SelectionController state directly.
+        pipeline.onYDispChanged = { [weak self] _ in
+            self?.publishSelectionOverlay()
+        }
+        pipeline.onAlternateBufferChanged = { [weak self] _ in
+            // Either edge invalidates the selection — primary-buffer rows
+            // and alt-buffer rows live in disjoint id spaces. Drop the
+            // selection rather than try to remap.
+            guard let self else { return }
+            self.selectionController.clear()
+            self.publishSelectionOverlay()
+        }
     }
 
     // MARK: - First Responder
@@ -217,9 +234,18 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
     /// Standard `copy:` selector. Pulls the latest snapshot and asks the
     /// `SelectionController` to write the extracted text to the general
     /// pasteboard. Returns silently if nothing is selected.
+    ///
+    /// Uses `createSnapshotWithAnchor` so the snapshot and the absolute row
+    /// id used to project the selection are read atomically — otherwise a
+    /// PTY write that bumps `yDisp` between the two reads could leave the
+    /// extractor reading the wrong rows.
     @objc public func copy(_ sender: Any?) {
-        let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
-        _ = selectionController.copyToPasteboard(snapshot: snapshot, cols: snapshot.cols)
+        let (snapshot, topAbs, _) = pipeline.adapter.createSnapshotWithAnchor(
+            scrollbackOffset: scrollbackOffset)
+        _ = selectionController.copyToPasteboard(
+            snapshot: snapshot,
+            cols: snapshot.cols,
+            topScrollInvariantRow: topAbs)
     }
 
     /// Validates Edit menu items so Copy is greyed out when there's no
@@ -343,20 +369,46 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
     }
 
     // MARK: - Selection routing
+    //
+    // Wave 2-C: selection coordinates are *scroll-invariant absolute* row
+    // ids. The conversion mirrors `SwiftTermAdapter.createSnapshotWithAnchor`
+    // so the row id that ends up on the selection always matches what
+    // `publishSelectionOverlay` will subtract back out:
+    //
+    //     clamped       = min(max(scrollbackOffset, 0), topScrollInvariantRow)
+    //     anchorAbsRow  = topScrollInvariantRow - clamped + viewportRow
+    //
+    // Reading `topScrollInvariantRow` once per gesture step keeps the anchor
+    // stable even if the PTY thread shifts `yDisp` between the down and the
+    // first drag.
+
+    /// Mirrors `createSnapshotWithAnchor`'s clamp: scrollback can never go
+    /// past the bottom of recorded history.
+    private func absoluteRow(forViewportRow viewportRow: Int) -> Int {
+        let top = pipeline.adapter.topScrollInvariantRow
+        let clamped = max(0, min(scrollbackOffset, top))
+        return top - clamped + viewportRow
+    }
 
     private func handleSelectionMouseDown(_ event: NSEvent) {
         let (col, row) = terminalCoordinate(for: event)
-        // TODO(v0.2.x): use a scroll-invariant absolute row once SwiftTerm
-        // exposes a reliable `yDisp + viewportRow` mapping. Wave 2-A treats
-        // selection rows as viewport-relative; scrollback selections will
-        // need this lifted before they work end-to-end.
-        let point = GridPoint(row: row, col: col)
+        let absRow = absoluteRow(forViewportRow: row)
+        let point = GridPoint(row: absRow, col: col)
         selectionController.beginDrag(at: point, clickCount: event.clickCount)
 
-        let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
         switch event.clickCount {
-        case 2: selectionController.snapToWord(in: snapshot, cols: snapshot.cols)
-        case let n where n >= 3: selectionController.snapToLine(cols: snapshot.cols)
+        case 2:
+            let (snapshot, topAbs, _) = pipeline.adapter.createSnapshotWithAnchor(
+                scrollbackOffset: scrollbackOffset)
+            selectionController.snapToWord(
+                in: snapshot, cols: snapshot.cols, topScrollInvariantRow: topAbs)
+        case let n where n >= 3:
+            // Line mode does not need the snapshot, but we read cols off it
+            // for parity with the previous behaviour.
+            let (snapshot, topAbs, _) = pipeline.adapter.createSnapshotWithAnchor(
+                scrollbackOffset: scrollbackOffset)
+            selectionController.snapToLine(
+                cols: snapshot.cols, topScrollInvariantRow: topAbs)
         default: break
         }
         publishSelectionOverlay()
@@ -364,36 +416,58 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
 
     private func handleSelectionMouseDragged(_ event: NSEvent) {
         let (col, row) = terminalCoordinate(for: event)
-        let point = GridPoint(row: row, col: col)
+        let absRow = absoluteRow(forViewportRow: row)
+        let point = GridPoint(row: absRow, col: col)
         selectionController.extendDrag(to: point)
         if selectionController.current?.mode == .word {
-            let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
-            selectionController.snapToWord(in: snapshot, cols: snapshot.cols)
+            let (snapshot, topAbs, _) = pipeline.adapter.createSnapshotWithAnchor(
+                scrollbackOffset: scrollbackOffset)
+            selectionController.snapToWord(
+                in: snapshot, cols: snapshot.cols, topScrollInvariantRow: topAbs)
         } else if selectionController.current?.mode == .line {
-            let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
-            selectionController.snapToLine(cols: snapshot.cols)
+            let (snapshot, topAbs, _) = pipeline.adapter.createSnapshotWithAnchor(
+                scrollbackOffset: scrollbackOffset)
+            selectionController.snapToLine(
+                cols: snapshot.cols, topScrollInvariantRow: topAbs)
         }
         publishSelectionOverlay()
     }
 
     private func handleSelectionMouseUp(_ event: NSEvent) {
         let (col, row) = terminalCoordinate(for: event)
-        let point = GridPoint(row: row, col: col)
+        let absRow = absoluteRow(forViewportRow: row)
+        let point = GridPoint(row: absRow, col: col)
         selectionController.endDrag(at: point)
         publishSelectionOverlay()
     }
 
     /// Projects the controller's current selection onto the renderer overlay.
-    /// Selection rows are already viewport-relative in Wave 2-A so the
-    /// projection is a direct `SelectionGeometry.expand` mapping.
+    ///
+    /// The selection lives in absolute (scroll-invariant) row ids; the overlay
+    /// expects viewport-relative segments. We pull a fresh snapshot anchor
+    /// (atomically, via `createSnapshotWithAnchor`) and ask
+    /// `SelectionController.projectToViewport` to translate + clip.
+    ///
+    /// Called from:
+    ///   * mouse down/dragged/up while a drag is live,
+    ///   * scrollWheel / snapToBottomIfScrolled when `scrollbackOffset` shifts,
+    ///   * the pipeline's `onYDispChanged` hook when the PTY pushes new lines,
+    ///   * the pipeline's `onAlternateBufferChanged` hook (after clearing).
     private func publishSelectionOverlay() {
-        guard let selection = selectionController.current, !selection.isEmpty else {
+        let isLive = selectionController.current?.isEmpty == false
+        guard isLive else {
             pipeline.renderCoordinator.updateSelection(nil)
             return
         }
-        let snapshot = pipeline.adapter.createSnapshot(scrollbackOffset: scrollbackOffset)
-        let segments = SelectionGeometry.expand(selection, cols: snapshot.cols)
-            .map { SelectionOverlay.Segment(viewportRow: $0.row, cols: $0.cols) }
+        let (snapshot, topAbs, _) = pipeline.adapter.createSnapshotWithAnchor(
+            scrollbackOffset: scrollbackOffset)
+        let projected = selectionController.projectToViewport(
+            topScrollInvariantRow: topAbs,
+            viewportRows: snapshot.rows,
+            cols: snapshot.cols)
+        let segments = projected.map {
+            SelectionOverlay.Segment(viewportRow: $0.viewportRow, cols: $0.cols)
+        }
         pipeline.renderCoordinator.updateSelection(SelectionOverlay(segments: segments))
     }
 
@@ -430,9 +504,16 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
 
     public override func scrollWheel(with event: NSEvent) {
         let delta = Int(event.scrollingDeltaY)
+        let oldOffset = scrollbackOffset
         scrollbackOffset = max(0, scrollbackOffset + delta)
         pipeline.scrollbackOffset = scrollbackOffset
         markAllRowsDirty()
+        if scrollbackOffset != oldOffset {
+            // Selection rows are scroll-invariant so the data does not change,
+            // but the viewport projection that the renderer paints absolutely
+            // does — republish so the overlay tracks the new viewport top.
+            publishSelectionOverlay()
+        }
     }
 
     // MARK: - Coordinate Conversion
@@ -514,6 +595,8 @@ public final class TerminalView: NSView, NSUserInterfaceValidations {
             scrollbackOffset = 0
             pipeline.scrollbackOffset = 0
             markAllRowsDirty()
+            // Same reason as scrollWheel: the projection moved.
+            publishSelectionOverlay()
         }
     }
 

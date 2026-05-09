@@ -18,6 +18,11 @@ public final class SwiftTermAdapter: TerminalParser {
     public let terminal: Terminal
     private let delegateAdapter: SwiftTermDelegateAdapter
 
+    /// Shell integration state aggregated from OSC 7 (cwd) and OSC 133
+    /// (semantic prompt markers). Always non-nil; populated only when an
+    /// integrated shell rc actually emits the sequences. V0.0.3 T1.
+    public let shellIntegration: ShellIntegrationState = ShellIntegrationState()
+
     /// Tracks DECTCEM cursor visibility (`?25h` / `?25l`). SwiftTerm keeps the
     /// authoritative `cursorHidden` flag internal, so we mirror it here from
     /// the `showCursor`/`hideCursor` delegate callbacks and surface it via
@@ -52,6 +57,59 @@ public final class SwiftTermAdapter: TerminalParser {
         }
         delegateAdapter.onBell = { [weak self] in
             self?.handleBell()
+        }
+        // OSC 7 (cwd). SwiftTerm parses the payload, fills
+        // `terminal.hostCurrentDirectory`, then calls
+        // `hostCurrentDirectoryUpdated`. We only mirror the latter.
+        delegateAdapter.onHostCwdChanged = { [weak self] in
+            self?.handleCwdChanged()
+        }
+        // OSC 133 (FinalTerm semantic prompts). SwiftTerm has no built-in
+        // handler for code 133; the closure is invoked with the raw payload
+        // bytes between `\e]133;` and the terminating ST/BEL.
+        terminal.registerOscHandler(code: 133) { [weak self] payload in
+            self?.handleOSC133(payload: payload)
+        }
+    }
+
+    // MARK: - Shell integration (OSC 7 + 133)
+    //
+    // NOTE: SwiftTerm gates OSC 7/6 behind `TerminalDelegate.isProcessTrusted`.
+    // The default protocol extension returns `true`, and SwiftTermDelegateAdapter
+    // intentionally does NOT override it — overriding to `false` would silently
+    // swallow OSC 7 and break shell integration. If a future reviewer adds an
+    // override here, also update the cwd path to compensate.
+    private func handleCwdChanged() {
+        if let raw = terminal.hostCurrentDirectory {
+            shellIntegration.applyCwd(raw: raw)
+        }
+    }
+
+    private func handleOSC133(payload: ArraySlice<UInt8>) {
+        guard let text = String(bytes: payload, encoding: .utf8), !text.isEmpty else {
+            return
+        }
+        let parts = text.split(separator: ";", omittingEmptySubsequences: false)
+        guard let kindChar = parts.first?.first else { return }
+        let line = scrollInvariantRow(forViewportRow: terminal.buffer.y)
+        switch kindChar {
+        case "A":
+            shellIntegration.handlePromptStart(line: line)
+        case "B":
+            shellIntegration.handleCommandInputStart(line: line)
+        case "C":
+            shellIntegration.handleCommandOutputStart(line: line)
+        case "D":
+            // OSC 133 ; D ; <exit>  — exit code optional.
+            var exit: Int32? = nil
+            if parts.count >= 2 {
+                exit = Int32(parts[1])
+            }
+            shellIntegration.handleCommandEnd(line: line, exitCode: exit)
+        default:
+            // Unknown subcommand; per FinalTerm spec we ignore silently so
+            // future extensions don't crash older clients.
+            break
         }
     }
 
@@ -208,6 +266,73 @@ public final class SwiftTermAdapter: TerminalParser {
         }
     }
 
+    // MARK: - Scroll-invariant row helpers
+    //
+    // These read SwiftTerm state without taking any extra lock; they have the
+    // same threading constraints as `createSnapshot` (i.e. callers must not
+    // race with `parse`). They exist so T1 (Shell Integration) and T2
+    // (selection row anchoring) can share a single notion of "which absolute
+    // buffer row is at viewport top right now" without each re-deriving it
+    // from `terminal.buffer.yDisp`.
+
+    /// Buffer index of the row currently at the top of the viewport.
+    ///
+    /// Equivalent to `terminal.buffer.yDisp`. Combined with a viewport-relative
+    /// row index this yields a stable "scroll-invariant" row id: as long as
+    /// SwiftTerm's scrollback hasn't evicted the line, the id stays valid
+    /// across subsequent scrolls.
+    public var topScrollInvariantRow: Int { terminal.buffer.yDisp }
+
+    /// Buffer index of the row currently at the bottom of the viewport (inclusive).
+    public var bottomScrollInvariantRow: Int {
+        terminal.buffer.yDisp + terminal.rows - 1
+    }
+
+    /// Whether the alternate screen buffer is active.
+    ///
+    /// True when a full-screen TUI (vim, less, codex, …) has switched in via
+    /// DECSET 1049 / 47 / 1047. Selection / shell-integration logic that
+    /// keys off scroll-invariant row ids should treat alt-screen ids as
+    /// disjoint from the primary buffer's.
+    public var isAlternateBuffer: Bool { terminal.isCurrentBufferAlternate }
+
+    /// Lifts a viewport-relative row (0 ..< rows) into a scroll-invariant
+    /// buffer row id.
+    public func scrollInvariantRow(forViewportRow viewportRow: Int) -> Int {
+        terminal.buffer.yDisp + viewportRow
+    }
+
+    /// Maps a scroll-invariant row id back to a viewport-relative row.
+    /// Returns `nil` if the row is no longer in the visible viewport.
+    public func viewportRow(forScrollInvariantRow row: Int) -> Int? {
+        let v = row - terminal.buffer.yDisp
+        return (0..<terminal.rows).contains(v) ? v : nil
+    }
+
+    /// Atomically captures a snapshot together with the scroll-invariant row
+    /// id of its top line and the alt-screen flag.
+    ///
+    /// Use this instead of reading `topScrollInvariantRow` and calling
+    /// `createSnapshot` separately: in between those two reads the PTY thread
+    /// could feed bytes that bump `yDisp`, leaving the caller with a snapshot
+    /// whose top row no longer matches the row id it captured.
+    ///
+    /// `scrollbackOffset` shares semantics with `createSnapshot(scrollbackOffset:)`,
+    /// and the returned `topScrollInvariantRow` is computed using the same
+    /// clamp so the two never drift.
+    public func createSnapshotWithAnchor(scrollbackOffset: Int = 0)
+        -> (snapshot: ScreenBufferSnapshot, topScrollInvariantRow: Int, isAlternate: Bool)
+    {
+        let snapshot = createSnapshot(scrollbackOffset: scrollbackOffset)
+        // Mirror the exact clamp from createSnapshot so the returned top row
+        // matches the snapshot's first line even if the caller passes an
+        // out-of-range offset.
+        let maxScrollback = terminal.buffer.yDisp
+        let effectiveOffset = max(0, min(scrollbackOffset, maxScrollback))
+        let top = terminal.buffer.yDisp - effectiveOffset
+        return (snapshot, top, terminal.isCurrentBufferAlternate)
+    }
+
     // MARK: - Mouse mode
 
     /// SwiftTerm's current mouse reporting mode, projected onto a Hi-Terms-owned
@@ -240,6 +365,7 @@ private class SwiftTermDelegateAdapter: TerminalDelegate {
     var onCursorShown: (() -> Void)?
     var onCursorHidden: (() -> Void)?
     var onBell: (() -> Void)?
+    var onHostCwdChanged: (() -> Void)?
 
     func send(source: Terminal, data: ArraySlice<UInt8>) {
         onSendData?(Data(data))
@@ -259,6 +385,10 @@ private class SwiftTermDelegateAdapter: TerminalDelegate {
 
     func bell(source: Terminal) {
         onBell?()
+    }
+
+    func hostCurrentDirectoryUpdated(source: Terminal) {
+        onHostCwdChanged?()
     }
 
     func sizeChanged(source: Terminal) {}

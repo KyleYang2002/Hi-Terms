@@ -9,6 +9,10 @@ import TerminalRenderer
 public final class TerminalWindowController: NSWindowController {
     private let session: any Session
     private var terminalView: TerminalView!
+    private let baseTitle: String
+    private let shellName: String
+    private let homePath: String
+    private let localHostNames: Set<String>
 
     /// Creates a window controller with the given session and pipeline.
     ///
@@ -17,6 +21,14 @@ public final class TerminalWindowController: NSWindowController {
     ///   - pipeline: The concrete pipeline (passed to TerminalView for renderer access).
     public init(session: any Session, pipeline: DefaultTerminalPipeline) {
         self.session = session
+        self.baseTitle = "Hi-Terms"
+        self.shellName = (session.launchCommand as NSString).lastPathComponent
+        self.homePath = FileManager.default.homeDirectoryForCurrentUser.path
+        var hosts: Set<String> = ["localhost", ""]
+        hosts.insert(ProcessInfo.processInfo.hostName)
+        if let local = Host.current().localizedName { hosts.insert(local) }
+        for name in Host.current().names { hosts.insert(name) }
+        self.localHostNames = hosts
 
         // Calculate window size from terminal dimensions and font metrics,
         // adding TerminalLayout.contentInset on each side so the grid does not
@@ -53,10 +65,41 @@ public final class TerminalWindowController: NSWindowController {
                 }
             }
         }
+
+        // Update window title when shell integration reports a new cwd.
+        session.shellIntegration.onChange = { [weak self] change in
+            guard case let .cwdChanged(url, host, _) = change else { return }
+            DispatchQueue.main.async {
+                self?.applyWindowTitle(cwd: url, host: host)
+            }
+        }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    private func applyWindowTitle(cwd: URL?, host: String?) {
+        guard let window else { return }
+        let isRemote = host.map { !localHostNames.contains($0) } ?? false
+        if let cwd {
+            let path = cwd.path
+            if isRemote, let host {
+                window.title = "\(host):\(path) — ssh"
+            } else {
+                let display: String
+                if path == homePath {
+                    display = "~"
+                } else if path.hasPrefix(homePath + "/") {
+                    display = "~" + path.dropFirst(homePath.count)
+                } else {
+                    display = path
+                }
+                window.title = "\(display) — \(shellName)"
+            }
+        } else {
+            window.title = baseTitle
+        }
     }
 }
